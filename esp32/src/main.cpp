@@ -199,5 +199,11 @@ void loop() {
         }
     }
 
+    static uint32_t lastStatus = 0;
+    if (millis() - lastStatus >= STATUS_PERIOD_MS) {
+        lastStatus = millis();
+        Serial2.write(g_status);
+    }
+
     delay(50);
 }
