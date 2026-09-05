@@ -2,12 +2,26 @@
 #include "Lpf2Hub.h"
 #include "hw_config.h"
 #include "control.h"
+#include "protocol.h"
 
 Lpf2Hub myHub;
 
 static volatile int32_t g_steerPos = 0;
 static SteerRange g_range = { 0, 0 };
 static bool g_calibrated = false;
+
+static const uint8_t ST_BOOT = 0, ST_SCANNING = 1, ST_CONNECTED = 2,
+                     ST_CALIBRATING = 3, ST_READY_DISARMED = 4,
+                     ST_ARMED = 5, ST_FAILSAFE = 6, ST_ERROR = 7;
+
+static uint8_t g_status = ST_BOOT;
+static bool g_armed = false;            // the ESP32's own latch
+static uint32_t g_lastGoodFrameMs = 0;
+static int g_throttleNow = 0;           // slew-limited, what the motors see
+static Frame g_frame = { 0, 0, 0 };
+
+static char g_line[64];
+static size_t g_lineLen = 0;
 
 void steerCallback(void *hub, byte portNumber, DeviceType deviceType, uint8_t *pData) {
     (void)portNumber; (void)deviceType;
@@ -62,11 +76,61 @@ bool calibrateSteering() {
     return true;
 }
 
+// Accumulate bytes into g_line; on newline, parse and update on success.
+// A frame that fails to parse is dropped WITHOUT refreshing the failsafe
+// timer, so a degrading wire decays into a stop rather than into garbage.
+static void pumpSerial() {
+    while (Serial2.available()) {
+        char c = (char)Serial2.read();
+        if (c == '\n' || c == '\r') {
+            if (g_lineLen > 0) {
+                g_line[g_lineLen] = '\0';
+                Frame f;
+                if (parseFrame(g_line, &f)) {
+                    g_frame = f;
+                    g_lastGoodFrameMs = millis();
+                    if (f.flags & FLAG_RECAL) {
+                        // A fresh button press is the only thing that arms us,
+                        // and only once calibration has actually succeeded.
+                        if (g_calibrated) g_armed = true;
+                    }
+                    if (!(f.flags & FLAG_ARMED)) g_armed = false;
+                }
+                g_lineLen = 0;
+            }
+        } else if (g_lineLen < sizeof(g_line) - 1) {
+            g_line[g_lineLen++] = c;
+        } else {
+            g_lineLen = 0;   // overlong garbage: resynchronize
+        }
+    }
+}
+
+static void applyControl(int steer, int throttle) {
+    int s = HW_STEER_INVERT ? -steer : steer;
+    myHub.setAbsoluteMotorPosition(HW_STEER_PORT, STEER_SPEED,
+                                   steerToPosition(s, g_range.halfRange),
+                                   STEER_MAX_POWER);
+    for (int i = 0; i < 2; i++) {
+        int p = HW_DRIVE_INVERT[i] ? -throttle : throttle;
+        myHub.setBasicMotorSpeed(HW_DRIVE_PORTS[i], p);
+    }
+}
+
+static void stopEverything() {
+    g_throttleNow = 0;
+    for (int i = 0; i < 2; i++) myHub.stopBasicMotor(HW_DRIVE_PORTS[i]);
+    if (g_calibrated) {
+        myHub.setAbsoluteMotorPosition(HW_STEER_PORT, 60, 0, STEER_MAX_POWER);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(200);
     Serial.println("\n[boot] scanning for Technic Hub...");
     myHub.init();
+    Serial2.begin(UART_BAUD, SERIAL_8N1, PIN_UART_RX, PIN_UART_TX);
 }
 
 void loop() {
@@ -105,5 +169,35 @@ void loop() {
     } else if (myHub.isConnected()) {
         backoffMs = 500;   // up again: the next dropout retries fast
     }
+
+    pumpSerial();
+
+    static uint32_t lastTick = 0;
+    if (millis() - lastTick >= CONTROL_PERIOD_MS) {
+        lastTick = millis();
+
+        if (!myHub.isConnected()) {
+            g_armed = false;
+            g_status = ST_SCANNING;
+        } else if (!g_calibrated) {
+            g_status = ST_ERROR;
+        } else if (millis() - g_lastGoodFrameMs > FRAME_TIMEOUT_MS) {
+            if (g_armed || g_status != ST_FAILSAFE) {
+                Serial.println("[failsafe] no valid frame — stopping");
+            }
+            g_armed = false;              // require a fresh press to recover
+            g_status = ST_FAILSAFE;
+            stopEverything();
+        } else if (!g_armed) {
+            g_status = ST_READY_DISARMED;
+            stopEverything();
+        } else {
+            g_status = ST_ARMED;
+            g_throttleNow = slewLimit(g_throttleNow, g_frame.throttle,
+                                      THROTTLE_SLEW_PER_TICK);
+            applyControl(g_frame.steer, g_throttleNow);
+        }
+    }
+
     delay(50);
 }
