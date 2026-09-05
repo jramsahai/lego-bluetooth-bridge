@@ -1,0 +1,9 @@
+{
+  "steerPort": "A",
+  "drivePorts": ["B", "C"],
+  "driveInvert": [false, true],
+  "steerInvert": false,
+  "steerHalfRange": 63,
+  "verified": false,
+  "notes": "UNVERIFIED PLACEHOLDER VALUES. No physical car was available when this file was written; these are the brief's example values, not measurements. Before Task 7 (ESP32 hw_config.h) or any real driving, run `npm run discover`, then `npm run calibrate`, then `npm run drive` against the real 42160/Technic Hub 88012, confirm drive-motor agreement and steering direction, and replace every field here (including steerHalfRange from two agreeing calibration runs) with the measured values. Set verified to true only once that has been done."
+}
