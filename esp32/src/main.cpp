@@ -19,9 +19,18 @@ static bool g_armed = false;            // the ESP32's own latch
 static uint32_t g_lastGoodFrameMs = 0;
 static int g_throttleNow = 0;           // slew-limited, what the motors see
 static Frame g_frame = { 0, 0, 0 };
+static bool g_calibFailed = false;       // distinguishes "still calibrating" from "calibration failed"
 
 static char g_line[64];
 static size_t g_lineLen = 0;
+
+// Set g_status and push it immediately, rather than waiting for the 5 Hz
+// timer — needed around the calibration sweep, which blocks loop() for
+// several seconds and would otherwise leave the micro:bit on a stale icon.
+static void sendStatus(uint8_t s) {
+    g_status = s;
+    Serial2.write(g_status);
+}
 
 void steerCallback(void *hub, byte portNumber, DeviceType deviceType, uint8_t *pData) {
     (void)portNumber; (void)deviceType;
@@ -39,6 +48,7 @@ static bool sweepToStop(int speed, int32_t *stopPos) {
 
     while (millis() - t0 < SWEEP_TIMEOUT_MS) {
         delay(20);
+        sendStatus(ST_CALIBRATING);   // keep the wire alive across the sweep
         if (stallPush(&d, millis(), g_steerPos)) {
             myHub.stopTachoMotor(HW_STEER_PORT);
             *stopPos = g_steerPos;
@@ -137,6 +147,7 @@ void loop() {
     if (myHub.isConnecting()) {
         if (myHub.connectHub()) {
             Serial.println("[ble] connected");
+            sendStatus(ST_CONNECTED);
         } else {
             Serial.println("[ble] connect failed, rescanning");
             myHub.init();
@@ -144,10 +155,12 @@ void loop() {
     }
 
     if (myHub.isConnected() && !g_calibrated) {
+        sendStatus(ST_CALIBRATING);
         delay(2000);                                   // let attach settle
         myHub.activatePortDevice(HW_STEER_PORT, steerCallback);
         delay(300);
         g_calibrated = calibrateSteering();
+        g_calibFailed = !g_calibrated;
         if (!g_calibrated) {
             Serial.println("[calib] ERROR — staying disarmed");
             delay(3000);
@@ -180,7 +193,7 @@ void loop() {
             g_armed = false;
             g_status = ST_SCANNING;
         } else if (!g_calibrated) {
-            g_status = ST_ERROR;
+            g_status = g_calibFailed ? ST_ERROR : ST_CALIBRATING;
         } else if (millis() - g_lastGoodFrameMs > FRAME_TIMEOUT_MS) {
             if (g_armed || g_status != ST_FAILSAFE) {
                 Serial.println("[failsafe] no valid frame — stopping");
