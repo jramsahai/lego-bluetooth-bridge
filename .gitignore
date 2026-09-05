@@ -1,0 +1,5 @@
+node_modules/
+.pio/
+.vscode/
+*.hex
+.DS_Store
