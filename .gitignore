@@ -3,3 +3,5 @@ node_modules/
 .vscode/
 *.hex
 .DS_Store
+.venv/
+esp32/.pio/
