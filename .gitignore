@@ -5,3 +5,4 @@ node_modules/
 .DS_Store
 .venv/
 esp32/.pio/
+__pycache__/
