@@ -1,0 +1,186 @@
+# lego-bt-bridge
+
+Tilt a BBC micro:bit, drive a LEGO Technic 42160 (Audi RS Q e-tron). The
+official LEGO CONTROL+ phone app is fine at its job but unpleasant to use as a
+controller, so this replaces it with an accelerometer and two AA-scale
+microcontrollers, without touching the car itself.
+
+The system is three small components, each independently testable, connected
+by two well-defined interfaces: an ASCII serial protocol and Bluetooth Low
+Energy.
+
+## The car is never modified
+
+Nothing here flashes the Technic Hub, patches its firmware, or pairs with it
+in any way the CONTROL+ app would notice. The hub (LEGO Technic Hub 88012)
+speaks LEGO Wireless Protocol 3.0 over BLE with no pairing and no
+authentication, and the official app is just one more BLE client sending it
+port-output commands. This project is another such client. That means:
+
+- Nothing to undo, ever.
+- To go back to the phone app: power-cycle the car, open CONTROL+. That's it.
+  There is no firmware to reflash and no state left behind on the hub.
+
+## Architecture
+
+```
++-------------+  ASCII frames   +--------------+   BLE / LWP3    +--------------+
+|  micro:bit  |  50 Hz, 115200  |    ESP32     |  (via Legoino)  |  Technic Hub |
+|             | --------------> |              | --------------> |    88012     |
+| accel read  | <-------------- | frame parse  |                 |              |
+| neutral cal |  status byte    | steer calib  |                 |   3 motors   |
+| LED feedback|     5 Hz        | failsafe     |                 |              |
++-------------+                 +--------------+                 +--------------+
+    P0/P1/GND                     GPIO16/17
+
+              +----------------------------------+
+              |  mac-harness/  (Node, dev only)  | --BLE--> same hub
+              |  port discovery, steering probe, |
+              |  keyboard driving, protocol log  |
+              +----------------------------------+
+```
+
+- **`microbit/`** — MicroPython on the micro:bit. Reads the accelerometer,
+  shapes tilt into steer/throttle values, and sends one ASCII frame per
+  sample over UART. Knows nothing about LEGO or Bluetooth. Displays the
+  ESP32's status byte as an icon, since the micro:bit is the only thing here
+  with a screen.
+- **`esp32/`** — the BLE central. Holds the connection to the hub, runs
+  steering calibration on every connect, parses frames from the micro:bit,
+  applies failsafes, and drives the motors via
+  [Legoino](https://github.com/corneliusmunz/legoino). Knows nothing about
+  accelerometers.
+- **`mac-harness/`** — a Node.js tool that runs on the Mac and talks to the
+  hub directly over its own Bluetooth, using
+  [`node-poweredup`](https://github.com/nathankellenicki/node-poweredup). It
+  exists to discover which port is which, prove out the steering-calibration
+  algorithm, and let you drive the car from the keyboard before any embedded
+  code is trusted. It's a permanent tool, not scaffolding to delete — reach
+  for it any time you need to debug the car independent of the rest of the
+  stack.
+
+## Wiring
+
+| micro:bit | ESP32          | Purpose                    |
+|-----------|----------------|-----------------------------|
+| `P0`      | `GPIO16` (RX2) | frames, micro:bit -> ESP32 |
+| `P1`      | `GPIO17` (TX2) | status, ESP32 -> micro:bit |
+| `GND`     | `GND`          | common ground               |
+| `3V`      | `3V3`          | power for the micro:bit     |
+
+Both boards run 3.3 V logic, so the UART lines connect directly — no level
+shifting needed. A single USB power bank feeds the ESP32; the ESP32's onboard
+regulator feeds the micro:bit through its `3V` pad.
+
+> **Never plug the micro:bit's USB cable in while it is powered from the
+> ESP32's `3V3` pin.** Doing so back-feeds the micro:bit's onboard regulator
+> from two directions at once. Disconnect the ESP32-side power (or the
+> `3V`/`GND` wires) before connecting USB for reflashing or debugging.
+
+Note for anyone substituting hardware: GPIO16/17 are free on ESP32-WROOM
+modules but are claimed by PSRAM on WROVER modules — if you use a WROVER,
+move UART2 to different pins and update `esp32/include/hw_config.h`.
+
+## Running each piece
+
+### mac-harness (Mac, dev tool)
+
+```bash
+cd mac-harness
+npm install
+npm run discover                                     # which port is which
+STEER_PORT=A npm run calibrate                        # prove the steering sweep
+STEER_PORT=A DRIVE_PORTS=B,C npm run drive            # keyboard driving
+```
+
+Environment variables (all optional, shown with their defaults):
+
+| Variable       | Default   | Meaning                                             |
+|----------------|-----------|------------------------------------------------------|
+| `STEER_PORT`   | `A`       | hub port letter the steering motor is on             |
+| `DRIVE_PORTS`  | `B,C`     | hub port letters for the two drive motors            |
+| `DRIVE_INVERT` | `false,false` | per-drive-motor direction inversion, comma-separated, one per `DRIVE_PORTS` entry |
+
+`npm run drive` controls: `A`/`D` steer, `W`/`S` throttle, `SPACE` stop,
+`Q` quit. Car must be on a stand with the wheels off the ground.
+
+### ESP32 (PlatformIO)
+
+This machine has PlatformIO installed in a project-local virtualenv at
+`./.venv/bin/pio`; if you have `pio` on your `PATH` instead, drop the
+`../.venv/bin/` prefix from the commands below.
+
+```bash
+cd esp32
+../.venv/bin/pio run -e esp32dev -t upload   # build and flash
+../.venv/bin/pio device monitor              # watch boot/connect/calibrate logs
+```
+
+(Or, with a global install: `pio run -e esp32dev -t upload && pio device monitor`.)
+
+### micro:bit
+
+```bash
+python3 -m pip install uflash
+cd microbit
+./flash.sh
+```
+
+`flash.sh` runs `python3 -m uflash main.py`. Since `uflash` only flashes a
+single script, if the display shows an error instead of the boot icon,
+`shaping.py` did not get bundled with it — see `docs/BRINGUP.md` for the fix.
+
+## Status-icon legend
+
+The ESP32 has no display of its own, so it reports its state as a single
+byte at 5 Hz, which the micro:bit renders on its LED matrix:
+
+| Byte | ESP32 state      | micro:bit icon (`Image.*`) |
+|------|------------------|------------------------------|
+| 0    | `BOOT`           | `DIAMOND_SMALL`              |
+| 1    | `BLE_SCANNING`   | `DIAMOND`                    |
+| 2    | `CONNECTED`      | `YES`                        |
+| 3    | `CALIBRATING`    | `ALL_CLOCKS[0]`               |
+| 4    | `READY_DISARMED` | `SQUARE_SMALL`                |
+| 5    | `ARMED`          | `HEART`                      |
+| 6    | `FAILSAFE`       | `NO`                          |
+| 7    | `ERROR`          | `SKULL`                      |
+
+Any other/unrecognized byte value shows `Image.SAD` — this is also what you
+see before the ESP32 has sent anything at all (e.g. micro:bit powered up
+standalone, not yet wired to an ESP32).
+
+## Running the tests
+
+Three independent suites, one per component that has logic worth testing on
+a desktop:
+
+```bash
+# mac-harness: steering-range math and stall detection
+cd mac-harness && npm test
+
+# ESP32: frame parsing/checksum and steering/slew math, no hardware or Arduino needed
+cd esp32 && ../.venv/bin/pio test -e native
+
+# micro:bit: tilt shaping (clamp, deadzone, expo) and frame building
+cd microbit && ../.venv/bin/python -m pytest test_shaping.py
+```
+
+(Use `python3 -m pytest test_shaping.py` for the last one if you aren't using
+the project venv.)
+
+## Controls
+
+- **Tilt roll** (side-to-side, read on the accelerometer's X axis) steers.
+- **Tilt pitch** (forward/back, read on the accelerometer's Y axis) throttles.
+- **Button A** captures the micro:bit's current orientation as the new
+  neutral (resting/level) position. Hold the micro:bit however feels natural,
+  then press A once before driving.
+
+**The car boots disarmed.** Power it up and it will not move — the ESP32
+starts with its own arm latch clear, and only sets it on receipt of a frame
+with a fresh button-A press *after* steering calibration has completed. This
+is deliberate: it means powering everything up while sitting on a table, or a
+brief signal dropout mid-drive, can never make the car move on its own. Press
+button A once (after the status icon shows `READY_DISARMED`, not before) to
+arm it and start driving.
