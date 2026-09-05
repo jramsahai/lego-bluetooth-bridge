@@ -18,14 +18,23 @@ ICONS = {
 }
 
 
-def capture_neutral():
-    """Average ~20 samples over ~400ms as the new resting orientation."""
+def capture_neutral(flags):
+    """Average ~20 samples over ~400ms as the new resting orientation.
+
+    Keeps writing frames (steer=0, throttle=0, the given flags) once per
+    sample so the ESP32's failsafe timer keeps getting refreshed while we
+    are re-zeroing, instead of going silent for the whole capture window.
+    Tilt readings during this window are meaningless (the hand is being
+    re-zeroed), so steer/throttle are deliberately zeroed, not carried
+    over from the caller.
+    """
     display.show(Image.TARGET)
     xs, ys = 0, 0
     n = 20
     for _ in range(n):
         xs += accelerometer.get_x()
         ys += accelerometer.get_y()
+        uart.write(build_frame(0, 0, flags))
         sleep(20)
     display.clear()
     return xs // n, ys // n
@@ -34,7 +43,7 @@ def capture_neutral():
 uart.init(baudrate=115200, tx=pin0, rx=pin1)
 # From here on, print() goes down the wire, not to USB. Use the display.
 
-x0, y0 = capture_neutral()
+x0, y0 = capture_neutral(0)
 have_neutral = True
 status = 0
 
@@ -43,7 +52,8 @@ while True:
 
     recal = False
     if button_a.was_pressed():
-        x0, y0 = capture_neutral()
+        armed_flags = FLAG_ARMED if have_neutral else 0
+        x0, y0 = capture_neutral(armed_flags)
         have_neutral = True
         recal = True
 
