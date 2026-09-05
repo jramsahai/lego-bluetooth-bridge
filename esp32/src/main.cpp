@@ -24,6 +24,19 @@ static int g_calibAttempts = 0;          // consecutive failed calibration attem
 static bool g_calibLatchedError = false; // 3 failures: stop retrying, stop touching the steer motor
 static const int MAX_CALIB_ATTEMPTS = 3;
 
+// Change-triggered BLE write caches: a hub connection interval of 15-30 ms
+// cannot absorb an unconditional 50 Hz command stream, and a sustained
+// GotoAbsolutePosition stream at the steering motor is exactly the pattern
+// our own spec flags as having wedged hub firmware in field reports. Only
+// resend when the commanded value actually changes. Reset whenever a fresh
+// BLE connection begins, since a new connection must not assume the hub
+// still holds whatever these caches last recorded.
+static int32_t g_lastSteerCmd = 0;
+static bool g_haveSteerCmd = false;
+static int g_lastDriveCmd[2] = { 0, 0 };
+static bool g_haveDriveCmd[2] = { false, false };
+static bool g_alreadyStopped = false;    // stopEverything() has already sent its stop writes
+
 static char g_line[64];
 static size_t g_lineLen = 0;
 
@@ -128,21 +141,39 @@ static void pumpSerial() {
 
 static void applyControl(int steer, int throttle) {
     int s = HW_STEER_INVERT ? -steer : steer;
-    myHub.setAbsoluteMotorPosition(HW_STEER_PORT, STEER_SPEED,
-                                   steerToPosition(s, g_range.halfRange),
-                                   STEER_MAX_POWER);
+    int32_t pos = steerToPosition(s, g_range.halfRange);
+    if (!g_haveSteerCmd || pos != g_lastSteerCmd) {
+        myHub.setAbsoluteMotorPosition(HW_STEER_PORT, STEER_SPEED, pos, STEER_MAX_POWER);
+        g_lastSteerCmd = pos;
+        g_haveSteerCmd = true;
+    }
     for (int i = 0; i < 2; i++) {
         int p = HW_DRIVE_INVERT[i] ? -throttle : throttle;
-        myHub.setBasicMotorSpeed(HW_DRIVE_PORTS[i], p);
+        if (!g_haveDriveCmd[i] || p != g_lastDriveCmd[i]) {
+            myHub.setBasicMotorSpeed(HW_DRIVE_PORTS[i], p);
+            g_lastDriveCmd[i] = p;
+            g_haveDriveCmd[i] = true;
+        }
     }
 }
 
+// Edge-triggered: sends its stop writes once on entry into a stopped state,
+// then does nothing on subsequent calls until applyControl() runs again.
+// g_throttleNow is still reset every call — only the BLE writes are gated.
 static void stopEverything() {
     g_throttleNow = 0;
-    for (int i = 0; i < 2; i++) myHub.stopBasicMotor(HW_DRIVE_PORTS[i]);
+    if (g_alreadyStopped) return;
+    for (int i = 0; i < 2; i++) {
+        myHub.stopBasicMotor(HW_DRIVE_PORTS[i]);
+        g_lastDriveCmd[i] = 0;
+        g_haveDriveCmd[i] = true;
+    }
     if (g_calibrated) {
         myHub.setAbsoluteMotorPosition(HW_STEER_PORT, 60, 0, STEER_MAX_POWER);
+        g_lastSteerCmd = 0;
+        g_haveSteerCmd = true;
     }
+    g_alreadyStopped = true;
 }
 
 void setup() {
@@ -160,6 +191,12 @@ void loop() {
             sendStatus(ST_CONNECTED);
             g_calibAttempts = 0;         // fresh set of attempts on (re)connect
             g_calibLatchedError = false;
+            // The whole connect-then-calibrate path ahead is outside the
+            // failsafe tick (it blocks loop() for up to ~9.4 s), so if the
+            // hub reconnected mid-drive with a stale throttle still applied
+            // on its side, stop it now rather than letting it run through
+            // the settle delay and the calibration sweep.
+            for (int i = 0; i < 2; i++) myHub.stopBasicMotor(HW_DRIVE_PORTS[i]);
         } else {
             Serial.println("[ble] connect failed, rescanning");
             myHub.init();
@@ -201,6 +238,13 @@ void loop() {
             g_calibrated = false;      // the car may come back with a different pose
             g_calibFailed = false;
         }
+        // A fresh connection may be a different hub, or the same hub having
+        // forgotten everything — never assume it still holds what these
+        // caches last recorded.
+        g_haveSteerCmd = false;
+        g_haveDriveCmd[0] = false;
+        g_haveDriveCmd[1] = false;
+        g_alreadyStopped = false;
         if (millis() - lastAttempt >= backoffMs) {
             lastAttempt = millis();
             myHub.init();
@@ -221,6 +265,7 @@ void loop() {
             g_status = ST_SCANNING;
         } else if (!g_calibrated) {
             g_status = g_calibFailed ? ST_ERROR : ST_CALIBRATING;
+            stopEverything();   // holds the drive motors stopped while calibrating or latched-ERROR
         } else if (millis() - g_lastGoodFrameMs > FRAME_TIMEOUT_MS) {
             if (g_armed || g_status != ST_FAILSAFE) {
                 Serial.println("[failsafe] no valid frame — stopping");
@@ -233,6 +278,7 @@ void loop() {
             stopEverything();
         } else {
             g_status = ST_ARMED;
+            g_alreadyStopped = false;   // leaving the stopped state: next stop must resend
             g_throttleNow = slewLimit(g_throttleNow, g_frame.throttle,
                                       THROTTLE_SLEW_PER_TICK);
             applyControl(g_frame.steer, g_throttleNow);

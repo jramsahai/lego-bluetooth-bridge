@@ -127,8 +127,9 @@ cd microbit
 ```
 
 `flash.sh` runs `python3 -m uflash main.py`. Since `uflash` only flashes a
-single script, if the display shows an error instead of the boot icon,
-`shaping.py` did not get bundled with it — see `docs/BRINGUP.md` for the fix.
+single script, if the display shows a scrolling MicroPython error instead of
+the target icon at boot, `shaping.py` did not get bundled with it — see
+`docs/BRINGUP.md` for the fix.
 
 ## Status-icon legend
 
@@ -146,9 +147,11 @@ byte at 5 Hz, which the micro:bit renders on its LED matrix:
 | 6    | `FAILSAFE`       | `NO`                          |
 | 7    | `ERROR`          | `SKULL`                      |
 
-Any other/unrecognized byte value shows `Image.SAD` — this is also what you
-see before the ESP32 has sent anything at all (e.g. micro:bit powered up
-standalone, not yet wired to an ESP32).
+Any other/unrecognized byte value shows `Image.SAD`, but that requires an
+actual out-of-range byte to arrive over UART — it is not what you see before
+anything has been sent. With nothing yet wired to `P0`/`P1` (e.g. micro:bit
+powered up standalone), `status` simply stays at its initial value of 0, so
+the display shows `DIAMOND_SMALL` (the `BOOT` icon), not `SAD`.
 
 ## Running the tests
 

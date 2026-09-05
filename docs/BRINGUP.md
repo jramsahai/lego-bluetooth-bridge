@@ -125,12 +125,19 @@ expect:
   if `uflash` does not also bundle `shaping.py` onto the device, that import
   fails at boot.
 - **How you'll know:** flash with the micro:bit on USB only (not yet wired to
-  an ESP32) and watch the display. Expected good sequence: the target icon
-  (`Image.TARGET`, during the initial neutral capture) appears first, then it
-  clears and starts showing `Image.SAD` (correct — nothing is sending status
-  bytes yet, since nothing is connected to P0/P1). If instead you see an
-  error scroll, or `Image.SAD` immediately with no target icon first,
-  `shaping.py` was not bundled.
+  an ESP32) and watch the display. Expected sequence with `shaping.py`
+  correctly bundled: the target icon (`Image.TARGET`, during the initial
+  neutral capture) appears first, then it clears and settles on
+  `Image.DIAMOND_SMALL` — the `BOOT`/`BLE_SCANNING` icon for status byte 0 —
+  and stays there, because nothing is connected to `P0`/`P1` to ever change
+  `status` away from its initial value. `Image.SAD` does not appear on this
+  path at all; it's only `main.py`'s fallback for a status byte outside
+  0-7, which silence cannot produce. If `shaping.py` was *not* bundled, the
+  symptom looks completely different: `main.py`'s
+  `from shaping import ...` fails at the top of the script, before the
+  target icon or anything else is ever shown, so you'll see a scrolling
+  MicroPython `ImportError` instead — not `Image.SAD`, and not even the
+  target icon.
 - **The fix** (pick one):
   1. Inline the contents of `shaping.py` directly into the top of `main.py`,
      replacing the `from shaping import ...` line. Leave a comment noting
@@ -178,9 +185,16 @@ interface.
    micro:bit.
 3. **Full stack.** Wire the micro:bit to the ESP32 per the README's wiring
    table, power both from the same bank, and confirm the LED status icon
-   matches what the serial monitor says the ESP32's state is (`BOOT` ->
-   `BLE_SCANNING` -> `CONNECTED` -> `CALIBRATING` -> `READY_DISARMED`), then
-   press button A and confirm `ARMED` and the wheels responding to tilt. This
+   matches what the serial monitor says the ESP32's state is. The protocol's
+   byte sequence is `BOOT` -> `BLE_SCANNING` -> `CONNECTED` -> `CALIBRATING`
+   -> `READY_DISARMED`, but `CONNECTED` is sent once and superseded roughly
+   2 ms later by `CALIBRATING`, before the micro:bit's next UART read —
+   it's a real, transient state in the protocol, just not one you should
+   expect to actually see rendered. What you should observe on the display
+   is: the scanning icon (`Image.DIAMOND`), then the calibrating clock
+   (`Image.ALL_CLOCKS[0]`) for the several seconds of the sweep, then the
+   disarmed square (`Image.SQUARE_SMALL`). Then press button A and confirm
+   the heart (`ARMED`) and the wheels responding to tilt. This
    is the only stage that validates the micro:bit code and the physical
    wiring together, so it's the only stage that can surface a wiring mistake
    or a micro:bit bug — do it last, and only once stages 1 and 2 both work.
