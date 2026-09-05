@@ -20,6 +20,9 @@ static uint32_t g_lastGoodFrameMs = 0;
 static int g_throttleNow = 0;           // slew-limited, what the motors see
 static Frame g_frame = { 0, 0, 0 };
 static bool g_calibFailed = false;       // distinguishes "still calibrating" from "calibration failed"
+static int g_calibAttempts = 0;          // consecutive failed calibration attempts
+static bool g_calibLatchedError = false; // 3 failures: stop retrying, stop touching the steer motor
+static const int MAX_CALIB_ATTEMPTS = 3;
 
 static char g_line[64];
 static size_t g_lineLen = 0;
@@ -49,7 +52,14 @@ static bool sweepToStop(int speed, int32_t *stopPos) {
     while (millis() - t0 < SWEEP_TIMEOUT_MS) {
         delay(20);
         sendStatus(ST_CALIBRATING);   // keep the wire alive across the sweep
-        if (stallPush(&d, millis(), g_steerPos)) {
+        bool stalled = stallPush(&d, millis(), g_steerPos);
+        // Ignore stall verdicts for the first 300 ms: BLE write latency plus
+        // motor spin-up can otherwise leave the motor still stationary when
+        // the 150 ms / 2 degree window is first satisfied, which would read
+        // as an end stop before the motor has moved at all. Do not remove
+        // this dead time — 300 ms + the 150 ms window still leaves large
+        // headroom under the 3000 ms timeout.
+        if (stalled && millis() - t0 >= 300) {
             myHub.stopTachoMotor(HW_STEER_PORT);
             *stopPos = g_steerPos;
             delay(300);                    // settle before reversing
@@ -148,22 +158,38 @@ void loop() {
         if (myHub.connectHub()) {
             Serial.println("[ble] connected");
             sendStatus(ST_CONNECTED);
+            g_calibAttempts = 0;         // fresh set of attempts on (re)connect
+            g_calibLatchedError = false;
         } else {
             Serial.println("[ble] connect failed, rescanning");
             myHub.init();
         }
     }
 
-    if (myHub.isConnected() && !g_calibrated) {
+    if (myHub.isConnected() && !g_calibrated && !g_calibLatchedError) {
         sendStatus(ST_CALIBRATING);
         delay(2000);                                   // let attach settle
         myHub.activatePortDevice(HW_STEER_PORT, steerCallback);
         delay(300);
         g_calibrated = calibrateSteering();
         g_calibFailed = !g_calibrated;
+
+        // Whatever piled up on the wire during the 5.5-9.4 s blocking sweep
+        // (including a stale RECAL press) must not be acted on the instant
+        // pumpSerial() next runs — drop it and let the failsafe see the gap.
+        while (Serial2.available()) Serial2.read();
+        g_lineLen = 0;
+
         if (!g_calibrated) {
+            g_calibAttempts++;
             Serial.println("[calib] ERROR — staying disarmed");
-            delay(3000);
+            if (g_calibAttempts >= MAX_CALIB_ATTEMPTS) {
+                g_calibLatchedError = true;
+                Serial.println("[calib] giving up after 3 failed attempts — "
+                                "check HW_STEER_PORT against docs/hardware-map.md");
+            } else {
+                delay(3000);
+            }
         }
     }
 
@@ -173,6 +199,7 @@ void loop() {
         if (g_calibrated) {
             Serial.println("[ble] disconnected");
             g_calibrated = false;      // the car may come back with a different pose
+            g_calibFailed = false;
         }
         if (millis() - lastAttempt >= backoffMs) {
             lastAttempt = millis();
@@ -218,5 +245,5 @@ void loop() {
         Serial2.write(g_status);
     }
 
-    delay(50);
+    delay(2);
 }
