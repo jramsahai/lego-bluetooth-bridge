@@ -12,10 +12,15 @@ const INVERT = (process.env.DRIVE_INVERT || "false,false")
   .split(",").map((s) => s.trim() === "true");
 const STEER_INVERT = process.env.STEER_INVERT === "true";
 const MAX_SPEED = Number(process.env.MAX_SPEED || 70);   // indoor-sane default
+// A geared LEGO motor will not sustain rotation at a low duty cycle: it kicks,
+// stalls, and sits there whining. motortest showed these motors run happily at
+// 40, so throttle is mapped onto MIN_POWER..MAX_SPEED rather than 0..MAX_SPEED,
+// which makes the very first press actually move the car.
+const MIN_POWER = Number(process.env.MIN_POWER || 25);
 const SWEEP_POWER = 30;
 
 const STEER_STEP = 25;
-const THROTTLE_STEP = 10;
+const THROTTLE_STEP = 20;
 
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
@@ -45,12 +50,34 @@ poweredUP.on("discover", async (hub) => {
   let throttle = 0;
   let steerValue = 0;
 
+  // Map a -100..100 throttle onto real motor power, with a floor so the
+  // first press does something instead of stalling the motor.
+  const toPower = (t) => {
+    if (t === 0) return 0;
+    const mag = MIN_POWER + ((MAX_SPEED - MIN_POWER) * Math.abs(t)) / 100;
+    return Math.round(Math.sign(t) * Math.min(mag, 100));
+  };
+
+  let lastSteerCmd = null;
+  let lastPower = null;
+
   const apply = () => {
-    for (let i = 0; i < drives.length; i++) {
-      drives[i].setPower(INVERT[i] ? -throttle : throttle);
+    const power = toPower(throttle);
+    if (power !== lastPower) {
+      for (let i = 0; i < drives.length; i++) {
+        drives[i].setPower(INVERT[i] ? -power : power);
+      }
+      lastPower = power;
     }
+    // Only re-command the steering when the target actually moved. Sending
+    // gotoAngle on every keypress makes the motor actively servo to hold a
+    // position it is already at, which is where the constant whine came from.
     const s = STEER_INVERT ? -steerValue : steerValue;
-    steer.gotoAngle(steerToPosition(s, halfRange), 100);
+    const target = steerToPosition(s, halfRange);
+    if (target !== lastSteerCmd) {
+      steer.gotoAngle(target, 100);
+      lastSteerCmd = target;
+    }
   };
 
   const bar = (v) => {
@@ -63,7 +90,8 @@ poweredUP.on("discover", async (hub) => {
   const hud = () => {
     process.stdout.write(
       `\r steer ${String(steerValue).padStart(4)} ${bar(steerValue)}   ` +
-      `throttle ${String(throttle).padStart(4)} ${bar(throttle)}   `
+      `throttle ${String(throttle).padStart(4)} ${bar(throttle)} ` +
+      `power ${String(toPower(throttle)).padStart(4)}   `
     );
   };
 
@@ -74,7 +102,8 @@ poweredUP.on("discover", async (hub) => {
   console.log("  C                 centre the steering, keep driving");
   console.log("  SPACE             STOP - throttle to zero, wheels straight");
   console.log("  Q or Ctrl-C       quit (stops the car and centres the wheels)");
-  console.log(`\n  Speed capped at ${MAX_SPEED}. Raise it with MAX_SPEED=100.`);
+  console.log(`\n  Throttle maps onto motor power ${MIN_POWER}..${MAX_SPEED}.`);
+  console.log("  Raise the ceiling with MAX_SPEED=100, lower the floor with MIN_POWER=15.");
   console.log("  Throttle LATCHES: it holds its value until you change it or hit SPACE.\n");
 
   if (!process.stdin.isTTY) {
