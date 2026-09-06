@@ -68,7 +68,7 @@ Scripted selftest (`npm run selftest`) against the car:
 - **Port B drives the FRONT wheels.**
 - Port D steers.
 
-## Resolved: front-left wheel binding (mechanical, not electrical)
+## Resolved and CONFIRMED: front-left tire binding (mechanical, not electrical)
 
 During the selftest the front wheels appeared to stop while the rear kept
 running. Running both drive motors together with per-motor logging showed both
@@ -90,11 +90,16 @@ side. Nothing in the firmware or harness is implicated.
 Worth fixing before serious driving, since the car will be down on traction and
 will scrub that tire, but it does not block any of the software.
 
-Checks: spin the front-left by hand with power off; look for the tire fouling
-bodywork or a suspension arm; confirm the hub is not pinched against the
-upright; and confirm the steering really is centred, since the calibration
-centres on the midpoint of the motor's travel, which is only true straight-ahead
-if the linkage is symmetric.
+**CONFIRMED on the car:** removing the front-left tire and re-running the test
+made all wheels turn correctly. The binding was the tire itself fouling
+something, not the hub, axle, differential or motor.
+
+Refitting notes: seat the tire evenly on the rim, since a twisted or pinched
+LEGO tire runs slightly out-of-round and will rub where a properly seated one
+clears. Then check clearance at FULL LOCK BOTH WAYS, not just straight ahead —
+this is the steered axle, so a tire that clears when straight can still foul the
+arch or a suspension arm at angle. The front-right assembly is the working
+reference to compare against.
 
 ## Diagnostics available
 
