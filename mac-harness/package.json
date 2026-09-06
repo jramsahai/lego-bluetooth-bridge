@@ -17,7 +17,9 @@
     "floodtest": "node src/floodtest.js",
     "reprotest": "node src/reprotest.js",
     "exacttest": "node src/exacttest.js",
-    "pairtest": "node src/pairtest.js"
+    "pairtest": "node src/pairtest.js",
+    "secondcmd": "node src/secondcmdtest.js",
+    "calibbisect": "node src/calibbisect.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"

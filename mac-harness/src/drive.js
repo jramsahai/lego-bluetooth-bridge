@@ -36,16 +36,36 @@ poweredUP.on("discover", async (hub) => {
   const drives = [];
   for (const p of DRIVE_PORTS) drives.push(await hub.waitForDeviceAtPort(p));
 
-  console.log(`Calibrating steering on port ${STEER_PORT}...`);
-  const stopA = await sweep(steer, SWEEP_POWER, { portName: STEER_PORT });
-  const stopB = await sweep(steer, -SWEEP_POWER, { portName: STEER_PORT });
-  const { center, halfRange } = computeSteeringRange(
-    Math.min(stopA, stopB), Math.max(stopA, stopB)
-  );
-  await steer.gotoAngle(center, 40);
-  await hub.sleep(700);
-  await steer.resetZero();
-  console.log(`Calibrated. halfRange=${halfRange}, max speed=${MAX_SPEED}\n`);
+  // Calibration is skippable. Two reasons:
+  //  1. The steering range is already measured and recorded, so re-sweeping
+  //     before every drive costs six seconds for a number we know.
+  //  2. Running the calibration is what precedes port A refusing its commanded
+  //     power (see docs/BRINGUP.md). The mechanism is not understood, so this
+  //     avoids the sequence rather than claiming to fix it.
+  // Skipping relies on the encoder zero set by an earlier calibration, which
+  // the hub keeps until it is powered off. After a hub power cycle, run
+  // `npm run calibrate` once, or set SKIP_CALIB=0 here.
+  let halfRange;
+  if (process.env.SKIP_CALIB === "0") {
+    console.log(`Calibrating steering on port ${STEER_PORT}...`);
+    const stopA = await sweep(steer, SWEEP_POWER, { portName: STEER_PORT });
+    const stopB = await sweep(steer, -SWEEP_POWER, { portName: STEER_PORT });
+    const r = computeSteeringRange(Math.min(stopA, stopB), Math.max(stopA, stopB));
+    halfRange = r.halfRange;
+    steer.gotoAngle(r.center, 40);
+    await hub.sleep(700);
+    steer.resetZero();
+    await hub.sleep(300);
+    console.log(`Calibrated. halfRange=${halfRange}`);
+  } else {
+    halfRange = Number(process.env.STEER_HALF_RANGE || 105);
+    console.log(`Using recorded halfRange=${halfRange} (no sweep).`);
+    console.log("If the hub was power-cycled since the last calibration, run");
+    console.log("`npm run calibrate` first, or use SKIP_CALIB=0 to sweep now.");
+    steer.gotoAngle(0, 40);
+    await hub.sleep(600);
+  }
+  console.log(`max speed=${MAX_SPEED}\n`);
 
   let throttle = 0;
   let steerValue = 0;
