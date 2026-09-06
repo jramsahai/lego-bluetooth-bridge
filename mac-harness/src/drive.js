@@ -93,12 +93,22 @@ poweredUP.on("discover", async (hub) => {
   // Let the motor decelerate BEFORE judging it, otherwise the stopping
   // transient reads as "still turning" - the mistake that sent an earlier
   // round of this debugging down a blind alley.
+  // Every non-zero power command bumps `driveGen`; a verification only
+  // reports if no such command happened during its window. Otherwise it
+  // would blame a deliberately restarted motor for a failed stop.
   let verifyPending = 0;
+  let driveGen = 0;
   const verifyStopped = (i) => {
     verifyPending++;
+    const gen = driveGen;
     setTimeout(() => {
       const before = driveDeg[i];
       setTimeout(() => {
+        verifyPending--;
+        if (gen !== driveGen) {
+          log(`port ${DRIVE_PORTS[i]} stop verification cancelled (throttle re-applied)`);
+          return;
+        }
         const after = driveDeg[i];
         if (before === null || after === null) return;
         const moved = Math.abs(after - before);
@@ -107,7 +117,6 @@ poweredUP.on("discover", async (hub) => {
             ? `port ${DRIVE_PORTS[i]} CONFIRMED STOPPED`
             : `port ${DRIVE_PORTS[i]} STILL TURNING (${moved} deg/1.2s, 900ms after the stop)`
         );
-        verifyPending--;
       }, 1200);
     }, 900);
   };
@@ -142,6 +151,7 @@ poweredUP.on("discover", async (hub) => {
           verifyStopped(i);
         } else {
           const p = INVERT[i] ? -power : power;
+          driveGen++;
           drives[i].setPower(p);
           await gap();
           log(`setPower(${p}) -> port ${DRIVE_PORTS[i]}`);
