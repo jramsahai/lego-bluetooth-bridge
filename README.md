@@ -88,21 +88,39 @@ move UART2 to different pins and update `esp32/include/hw_config.h`.
 ```bash
 cd mac-harness
 npm install
-npm run discover                                     # which port is which
-STEER_PORT=A npm run calibrate                        # prove the steering sweep
-STEER_PORT=A DRIVE_PORTS=B,C npm run drive            # keyboard driving
+npm run discover        # which port is which
+npm run calibrate       # sweep the steering to its end stops, measure the range
+npm run selftest        # scripted direction check, no keyboard needed
+npm run drive           # keyboard driving (needs a real terminal)
+npm run firmwarecmds    # replay the ESP32 firmware's exact motor commands, report what the hub does
+npm run trace           # log every BLE byte while reproducing the old port A fault
 ```
 
-Environment variables (all optional, shown with their defaults):
+Defaults are the values measured against the car (`docs/hardware-map.md`).
+Environment variables, all optional:
 
-| Variable       | Default   | Meaning                                             |
-|----------------|-----------|------------------------------------------------------|
-| `STEER_PORT`   | `A`       | hub port letter the steering motor is on             |
-| `DRIVE_PORTS`  | `B,C`     | hub port letters for the two drive motors            |
-| `DRIVE_INVERT` | `false,false` | per-drive-motor direction inversion, comma-separated, one per `DRIVE_PORTS` entry |
+| Variable           | Default       | Meaning                                                          |
+|--------------------|---------------|------------------------------------------------------------------|
+| `STEER_PORT`       | `D`           | hub port letter of the steering motor                            |
+| `DRIVE_PORTS`      | `A,B`         | hub port letters of the two drive motors                         |
+| `DRIVE_INVERT`     | `false,false` | per-drive-motor direction inversion, one per `DRIVE_PORTS` entry |
+| `STEER_INVERT`     | `false`       | invert the steering direction                                    |
+| `MAX_SPEED`        | `70`          | `drive`: motor power at full throttle (up to 100)                |
+| `MIN_POWER`        | `25`          | `drive`: motor power at the first throttle step                  |
+| `SKIP_CALIB`       | unset         | `drive`: `1` skips the steering sweep and uses `STEER_HALF_RANGE` |
+| `STEER_HALF_RANGE` | `105`         | `drive`: steering half-range used when the sweep is skipped      |
 
-`npm run drive` controls: `A`/`D` steer, `W`/`S` throttle, `SPACE` stop,
-`Q` quit. Car must be on a stand with the wheels off the ground.
+`npm run drive` controls: `W`/`S` (or up/down) throttle in steps and latch,
+`A`/`D` (or left/right) steer, `C` centre the steering, `SPACE` stop and
+straighten, `Q` or Ctrl-C quit. Every stop is verified against the motor
+encoders and reported. Car on a stand with the wheels off the ground.
+
+All motor commands are written directly to the hub by `src/rawmotor.js`,
+using the same bytes the ESP32 firmware sends, rather than through
+node-poweredup's command queue. That queue can wedge a port for a whole
+session; see `docs/OPEN-ISSUE-port-a.md`. The remaining scripts under
+`src/` are diagnostics from that investigation and are listed in the same
+document.
 
 ### ESP32 (PlatformIO)
 
@@ -159,7 +177,8 @@ Three independent suites, one per component that has logic worth testing on
 a desktop:
 
 ```bash
-# mac-harness: steering-range math and stall detection
+# mac-harness: steering math, stall detection, raw motor command bytes,
+# and the node-poweredup queue wedge reproduction
 cd mac-harness && npm test
 
 # ESP32: frame parsing/checksum and steering/slew math, no hardware or Arduino needed
