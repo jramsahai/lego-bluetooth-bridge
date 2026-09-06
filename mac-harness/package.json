@@ -16,7 +16,8 @@
     "stoptest": "node src/stoptest.js",
     "floodtest": "node src/floodtest.js",
     "reprotest": "node src/reprotest.js",
-    "exacttest": "node src/exacttest.js"
+    "exacttest": "node src/exacttest.js",
+    "pairtest": "node src/pairtest.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"

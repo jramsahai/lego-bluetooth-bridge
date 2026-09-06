@@ -103,7 +103,9 @@ poweredUP.on("discover", async (hub) => {
   // Do NOT await the library calls to achieve this: node-poweredup's motor
   // methods return a promise that never settles, so awaiting one deadlocks
   // the script with the car still driving. Await a timer instead.
-  const gap = () => new Promise((r) => setTimeout(r, 20));
+  // 60ms proved reliable on the real car and 20ms did not, so 40ms with the
+  // change-gating (which means we rarely send at all) is a comfortable middle.
+  const gap = () => new Promise((r) => setTimeout(r, 40));
   const apply = async () => {
     const power = toPower(throttle);
     if (power !== lastPower) {

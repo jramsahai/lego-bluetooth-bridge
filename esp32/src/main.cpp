@@ -152,7 +152,7 @@ static void applyControl(int steer, int throttle) {
     for (int i = 0; i < 2; i++) {
         int p = HW_DRIVE_INVERT[i] ? -throttle : throttle;
         if (!g_haveDriveCmd[i] || p != g_lastDriveCmd[i]) {
-            if (wroteDrive) delay(15);
+            if (wroteDrive) delay(30);
             myHub.setBasicMotorSpeed(HW_DRIVE_PORTS[i], p);
             wroteDrive = true;
             g_lastDriveCmd[i] = p;
@@ -167,12 +167,14 @@ static void applyControl(int steer, int throttle) {
 static void stopEverything() {
     g_throttleNow = 0;
     if (g_alreadyStopped) return;
-    // Two stop commands issued back to back are NOT reliable. Measured on the
-    // real car via the Mac harness: braking two motors in a tight loop left the
-    // FIRST motor running at full speed and only stopped the second. Legoino
-    // writes over BLE without waiting for a response, so commands issued in
-    // immediate succession race and one is dropped. In a failsafe that means
-    // the car keeps driving on one axle.
+    // ANY two motor commands issued back to back are unreliable - and the
+    // damage is done by the STARTING commands, not the stopping ones. Measured
+    // on the real car: with two setPower commands sent in the same tick, that
+    // port then ignored every later stop, whatever the stop was or how far
+    // apart the stops were spaced. Space the two setPower calls by ~60ms and
+    // every stop method worked, including a plain power 0.
+    // Legoino writes over BLE without waiting for a response, so back-to-back
+    // writes race. In a failsafe that means the car keeps driving on one axle.
     //
     // So: space the two commands apart, then repeat the pair. A few
     // milliseconds is nothing against the 200 ms failsafe budget, and a stop
@@ -186,7 +188,7 @@ static void stopEverything() {
     for (int pass = 0; pass < 2; pass++) {
         for (int i = 0; i < 2; i++) {
             myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
-            delay(15);   // do not let the next write race this one
+            delay(30);   // do not let the next write race this one
         }
     }
     for (int i = 0; i < 2; i++) {
@@ -224,7 +226,7 @@ void loop() {
             // Spaced apart: back-to-back writes race and one is dropped.
             for (int i = 0; i < 2; i++) {
                 myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
-                delay(15);
+                delay(30);
             }
         } else {
             Serial.println("[ble] connect failed, rescanning");

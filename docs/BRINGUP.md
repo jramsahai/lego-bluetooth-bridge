@@ -328,9 +328,18 @@ silently lost. Nothing reports an error; the command simply never takes effect.
 
 ### The rule
 
-**Never issue two motor commands back to back.** Separate them in time: 20 ms
-in the harness, `delay(15)` in the firmware. Either is ample and costs nothing
-against the 200 ms failsafe budget.
+**Never issue two motor commands back to back - including the ones that START
+the motors.** This is the part that took longest to find: spacing only the stop
+commands does NOT help. Two `setPower` calls fired in the same tick leave that
+port ignoring every later command, so the stop fails long afterwards and looks
+like a broken stop.
+
+Bisected on the real car: with the two starting commands 60 ms apart, every stop
+method worked - brake first, brake in reverse order, even a plain `setPower(0)`.
+With them unspaced, nothing would stop the first motor.
+
+Use 40 ms in the harness and `delay(30)` in the firmware. 20 ms was measured as
+not enough.
 
 **Do NOT try to fix this by awaiting the library call.** node-poweredup's motor
 methods return a promise that never settles, so `await motor.brake()` deadlocks
