@@ -14,7 +14,9 @@
     "selftest": "node src/selftest.js",
     "motortest": "node src/motortest.js",
     "stoptest": "node src/stoptest.js",
-    "floodtest": "node src/floodtest.js"
+    "floodtest": "node src/floodtest.js",
+    "reprotest": "node src/reprotest.js",
+    "exacttest": "node src/exacttest.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"

@@ -147,10 +147,14 @@ static void applyControl(int steer, int throttle) {
         g_lastSteerCmd = pos;
         g_haveSteerCmd = true;
     }
+    // Same race applies to drive commands: separate consecutive writes.
+    bool wroteDrive = false;
     for (int i = 0; i < 2; i++) {
         int p = HW_DRIVE_INVERT[i] ? -throttle : throttle;
         if (!g_haveDriveCmd[i] || p != g_lastDriveCmd[i]) {
+            if (wroteDrive) delay(15);
             myHub.setBasicMotorSpeed(HW_DRIVE_PORTS[i], p);
+            wroteDrive = true;
             g_lastDriveCmd[i] = p;
             g_haveDriveCmd[i] = true;
         }
@@ -163,16 +167,29 @@ static void applyControl(int steer, int throttle) {
 static void stopEverything() {
     g_throttleNow = 0;
     if (g_alreadyStopped) return;
+    // Two stop commands issued back to back are NOT reliable. Measured on the
+    // real car via the Mac harness: braking two motors in a tight loop left the
+    // FIRST motor running at full speed and only stopped the second. Legoino
+    // writes over BLE without waiting for a response, so commands issued in
+    // immediate succession race and one is dropped. In a failsafe that means
+    // the car keeps driving on one axle.
+    //
+    // So: space the two commands apart, then repeat the pair. A few
+    // milliseconds is nothing against the 200 ms failsafe budget, and a stop
+    // is the one command worth sending twice.
+    //
+    // stopTachoMotor, NOT stopBasicMotor: Legoino's stopBasicMotor is
+    // setBasicMotorSpeed(port, 0), a raw power value with no braking style,
+    // while stopTachoMotor routes through setTachoMotorSpeed with
+    // BrakingStyle::BRAKE. Tacho is also the correct API family for these
+    // encoder motors. (Power 0 does stop them too, just less sharply.)
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < 2; i++) {
+            myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
+            delay(15);   // do not let the next write race this one
+        }
+    }
     for (int i = 0; i < 2; i++) {
-        // stopTachoMotor, NOT stopBasicMotor. Legoino's stopBasicMotor is
-        // setBasicMotorSpeed(port, 0): a raw power value with no braking style.
-        // stopTachoMotor routes through setTachoMotorSpeed with
-        // BrakingStyle::BRAKE, which is both the correct API family for an
-        // encoder motor and an explicit brake rather than an implicit one.
-        // (Measured on the real car, power 0 does also stop these motors, just
-        // less sharply — see docs/BRINGUP.md. The choice here is about being
-        // explicit in a failsafe path, not about power 0 being broken.)
-        myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
         g_lastDriveCmd[i] = 0;
         g_haveDriveCmd[i] = true;
     }
@@ -204,7 +221,11 @@ void loop() {
             // hub reconnected mid-drive with a stale throttle still applied
             // on its side, stop it now rather than letting it run through
             // the settle delay and the calibration sweep.
-            for (int i = 0; i < 2; i++) myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);  // brakes; see stopEverything()
+            // Spaced apart: back-to-back writes race and one is dropped.
+            for (int i = 0; i < 2; i++) {
+                myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
+                delay(15);
+            }
         } else {
             Serial.println("[ble] connect failed, rescanning");
             myHub.init();

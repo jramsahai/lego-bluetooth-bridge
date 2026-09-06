@@ -96,19 +96,23 @@ poweredUP.on("discover", async (hub) => {
     process.stdout.write(`\r\x1b[K[cmd] ${msg}\n`);
   };
 
-  const apply = () => {
+  // Every motor command is awaited. node-poweredup writes over BLE without
+  // waiting for a response, so two commands issued in the same tick race and
+  // one is silently dropped - measured on the real car as the first of two
+  // brake() calls having no effect at all.
+  const apply = async () => {
     const power = toPower(throttle);
     if (power !== lastPower) {
       for (let i = 0; i < drives.length; i++) {
         // brake() actively stops; setPower(0) leaves the motor coasting -
         // measured at 56 degrees of continued rotation on the real car.
         if (power === 0) {
-          drives[i].brake();
+          await drives[i].brake();
           log(`brake() -> port ${DRIVE_PORTS[i]}`);
           verifyStopped(i);
         } else {
           const p = INVERT[i] ? -power : power;
-          drives[i].setPower(p);
+          await drives[i].setPower(p);
           log(`setPower(${p}) -> port ${DRIVE_PORTS[i]}`);
         }
       }
@@ -122,7 +126,7 @@ poweredUP.on("discover", async (hub) => {
     const s = STEER_INVERT ? -steerValue : steerValue;
     const target = steerToPosition(s, halfRange);
     if (target !== lastSteerCmd) {
-      steer.gotoAngle(target, 100);
+      await steer.gotoAngle(target, 100);
       log(`gotoAngle(${target}) -> port ${STEER_PORT}`);
       lastSteerCmd = target;
     }
@@ -168,7 +172,7 @@ poweredUP.on("discover", async (hub) => {
       process.stdout.write("\r\x1b[K[cmd] waiting for stop verification to finish...\n");
       await new Promise((r) => setTimeout(r, 2400));
     }
-    for (const d of drives) d.brake();
+    for (const d of drives) await d.brake();
     await steer.gotoAngle(0, 40);
     process.stdout.write("\nStopped, wheels centred.\n");
     process.exit(0);
@@ -180,7 +184,7 @@ poweredUP.on("discover", async (hub) => {
   // A crash here would leave the car driving away, so every failure path
   // stops the motors first and says what happened.
   const panic = (label) => (err) => {
-    try { for (const d of drives) d.brake(); } catch (_) {}
+    try { for (const d of drives) d.brake(); } catch (_) {}   // best effort on the way out
     process.stdout.write(`\n\n!! ${label}: ${err && err.message ? err.message : err}\n`);
     process.stdout.write("!! motors braked. If the car is still moving, hold the hub button.\n");
     process.exit(1);
@@ -213,7 +217,7 @@ poweredUP.on("discover", async (hub) => {
         // drive motor directly, so a stale cache can never swallow a stop.
         throttle = 0;
         steerValue = 0;
-        for (let i = 0; i < drives.length; i++) drives[i].brake();
+        for (let i = 0; i < drives.length; i++) await drives[i].brake();
         lastPower = 0;
         log("SPACE: direct brake() on all drive motors");
         log("     watch the wheels for ~3s; verification below. Do NOT quit yet.");
@@ -222,7 +226,7 @@ poweredUP.on("discover", async (hub) => {
       default:
         return;
     }
-    apply();
+    await apply();
     hud();
    } catch (err) {
     panic("key handler failed")(err);

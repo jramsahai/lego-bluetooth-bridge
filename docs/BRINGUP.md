@@ -302,3 +302,37 @@ reading Legoino's source, not on the flawed measurement: `stopBasicMotor` is
 style, while `stopTachoMotor` routes through `setTachoMotorSpeed` with
 `BrakingStyle::BRAKE`. These are tacho motors with encoders, so the tacho
 command is the right API family for them either way.
+
+
+## Hardware finding: consecutive motor commands race, and one is dropped
+
+This is the most important thing the harness found, and it applies to the
+firmware as much as to the Mac scripts.
+
+Braking two motors in a tight loop does not work. Bisected on the real car:
+
+```
+  1. one motor,  one speed,  no steer cmd         0  stopped
+  2. TWO motors, one speed,  no steer cmd       536    0  <<<< STILL TURNING
+  3. TWO motors, TWO speeds, no steer cmd       514    0  <<<< STILL TURNING
+  4. TWO motors, TWO speeds, WITH steer cmd     532    0  <<<< STILL TURNING
+```
+
+One motor brakes reliably. With two, the FIRST motor keeps running at full
+speed and only the SECOND actually stops. Adding speed changes or steering
+commands changes nothing - two consecutive commands is the entire trigger.
+
+Both node-poweredup and Legoino write to the hub over BLE **without waiting for
+a response**, so two commands issued in immediate succession race and one is
+silently lost. Nothing reports an error; the command simply never takes effect.
+
+### The rule
+
+**Never issue two motor commands back to back.** In the harness, `await` each
+one. In the firmware, put a short delay between them - `delay(15)` is ample and
+costs nothing against the 200 ms failsafe budget.
+
+`stopEverything()` additionally sends the whole stop pair twice. A stop is the
+one command worth repeating, and this is exactly the failure it guards against:
+without it, a failsafe would have stopped one axle and left the car driving on
+the other.
