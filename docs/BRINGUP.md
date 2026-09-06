@@ -12,12 +12,30 @@
 > (Legoino) writes without waiting for acknowledgements and has no such queue,
 > so it is not affected. See `docs/OPEN-ISSUE-port-a.md`.
 
-Everything in this repo is built and unit-tested. **None of it has touched
-real hardware.** This document exists because that is the single most
-important thing to understand before you plug anything in. Read it before you
-touch the car.
+> **Status, 2026-09-06: the full stack has run on the car.** All four
+> bring-up stages below have been done: harness driving, ESP32 from
+> hand-typed frames, the wired micro:bit + ESP32 pair, and tilt control on
+> the car itself. Two real bugs were found and fixed on the way, both
+> recorded elsewhere: the micro:bit "freeze on the checkmark"
+> (`docs/OPEN-ISSUE-microbit-freeze.md` — the ESP32 was sending a raw
+> `0x03`, which is Ctrl-C to the micro:bit's console) and `uflash` only
+> flashing one script (`microbit/build_bundle.py`). The drive power floor
+> (`DRIVE_MIN_POWER`) was added after the first drive, because a small tilt
+> made the motors whine instead of turn.
+>
+> The rest of this document is kept as the procedure for the next time
+> something changes — a rebuilt car, a moved motor, a new board — and as the
+> record of what was and was not known before the first power-up.
 
-## What "finished but unproven" actually means here
+Everything in this repo is built and unit-tested, and as of 2026-09-06 it has
+also been run end to end on the real car. Do not skip the staged order below
+when something changes, though: each stage isolates one interface, and that
+is what made both hardware bugs above quick to pin down.
+
+## What "finished but unproven" meant before the first power-up
+
+(Historical: every item below has since been exercised on hardware. Kept
+because it records which claims were predictions at the time.)
 
 - **`esp32/` compiles for the target (first built 2026-09-05, Legoino 1.1.0),
   but has never run on a board.** `pio run -e esp32dev` succeeds, so every
@@ -80,44 +98,28 @@ directions, then update `hw_config.h`, `hardware-constants.json` and
 `HW_STEER_PORT` sweeps whatever is on that port at power for up to three
 seconds in each direction.
 
-## `microbit/main.py` has never run on a micro:bit
+## Flashing the micro:bit: `uflash` flashes exactly one script
 
-The logic it depends on (`shaping.py`) is tested; the glue that reads the
-accelerometer, drives the UART, and updates the display is not. Two things to
-expect:
+`main.py` does `from shaping import ...`, and `uflash` only ever flashes a
+single file, so a plain `uflash main.py` boots into a scrolling
+`ImportError`. `microbit/flash.sh` handles this by running
+`build_bundle.py`, which inlines `shaping.py`'s source into `main.py` at
+flash time and flashes the bundle. `shaping.py` stays the single source of
+truth and stays under test; nothing hand-copied ever exists.
 
-- **`uflash` flashes exactly one script.** `microbit/flash.sh` runs
-  `python3 -m uflash main.py` and says so in its own output. `main.py` does
-  `from shaping import shape_axis, build_frame, EXPO_STEER, EXPO_THROTTLE` —
-  if `uflash` does not also bundle `shaping.py` onto the device, that import
-  fails at boot.
-- **How you'll know:** flash with the micro:bit on USB only (not yet wired to
-  an ESP32) and watch the display. Expected sequence with `shaping.py`
-  correctly bundled: the target icon (`Image.TARGET`, during the initial
-  neutral capture) appears first, then it clears and settles on
-  `Image.DIAMOND_SMALL` — the `BOOT`/`BLE_SCANNING` icon for status byte 0 —
-  and stays there, because nothing is connected to `P0`/`P1` to ever change
-  `status` away from its initial value. `Image.SAD` does not appear on this
-  path at all; it's only `main.py`'s fallback for a status byte outside
-  0-7, which silence cannot produce. If `shaping.py` was *not* bundled, the
-  symptom looks completely different: `main.py`'s
-  `from shaping import ...` fails at the top of the script, before the
-  target icon or anything else is ever shown, so you'll see a scrolling
-  MicroPython `ImportError` instead — not `Image.SAD`, and not even the
-  target icon.
-- **The fix** (pick one):
-  1. Inline the contents of `shaping.py` directly into the top of `main.py`,
-     replacing the `from shaping import ...` line. Leave a comment noting
-     it's a duplicate of `shaping.py`, which stays the source of truth (and
-     stays under test).
-  2. Use `microfs` to put both files on the device's filesystem instead of
-     `uflash`:
-     ```bash
-     python3 -m pip install microfs
-     cd microbit
-     python3 -m microfs put shaping.py
-     python3 -m microfs put main.py
-     ```
+The other obvious fix — `microfs put shaping.py` onto the device
+filesystem as a second file — **does not work with this script**: `main.py`
+calls `uart.init(tx=pin0, rx=pin1)` a few hundred milliseconds into boot,
+which moves the micro:bit's only UART (and with it the USB REPL that
+`microfs` needs) off USB. This was tried during bring-up.
+
+What to expect after a correct flash, with the micro:bit on USB only (not
+yet wired to an ESP32): the target icon (`Image.TARGET`, the initial
+neutral capture) appears first, then it clears and settles on
+`Image.DIAMOND_SMALL` — the icon for status 0 — and stays there, because
+nothing is connected to `P0`/`P1` to ever change `status`. `Image.SAD` is
+only the fallback for a byte that is not a status digit, which silence
+cannot produce.
 
 ## Bring-up order
 
@@ -157,7 +159,12 @@ interface.
    -> `READY_DISARMED`, but `CONNECTED` is sent once and superseded roughly
    2 ms later by `CALIBRATING`, before the micro:bit's next UART read —
    it's a real, transient state in the protocol, just not one you should
-   expect to actually see rendered. What you should observe on the display
+   expect to actually see rendered. If the display *does* stop on the
+   `CONNECTED` checkmark and never moves again, that is the signature of a
+   raw `0x03` reaching the micro:bit's console (Ctrl-C, script killed): see
+   `docs/OPEN-ISSUE-microbit-freeze.md`. Status must go down the wire as
+   ASCII digits (`statusToWire` on the ESP32, `decode_status` on the
+   micro:bit). What you should observe on the display
    is: the scanning icon (`Image.DIAMOND`), then the calibrating clock
    (`Image.ALL_CLOCKS[0]`) for the several seconds of the sweep, then the
    disarmed square (`Image.SQUARE_SMALL`). Then press button A and confirm

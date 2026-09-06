@@ -57,3 +57,7 @@ bool parseFrame(const char *line, Frame *out) {
     out->flags = (uint8_t)vals[2];
     return true;
 }
+
+uint8_t statusToWire(uint8_t status) {
+    return (uint8_t)('0' + status);
+}

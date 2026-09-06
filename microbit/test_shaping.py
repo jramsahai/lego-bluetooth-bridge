@@ -1,5 +1,8 @@
 import pytest
-from shaping import shape_axis, xor_checksum, build_frame, EXPO_STEER, EXPO_THROTTLE
+from shaping import (
+    shape_axis, xor_checksum, build_frame, decode_status,
+    EXPO_STEER, EXPO_THROTTLE,
+)
 
 
 def test_neutral_is_zero():
@@ -60,3 +63,21 @@ def test_built_frames_round_trip_through_a_reference_parser(steer, throttle, fla
     s, t, f = (int(x) for x in body.split(","))
     assert (s, t, f) == (steer, throttle, flags)
     assert -100 <= s <= 100 and -100 <= t <= 100 and 0 <= f <= 255
+
+
+# The ESP32 sends its status as an ASCII digit, never as a raw small
+# integer: the UART is also MicroPython's console, where a raw 0x03 is
+# Ctrl-C and kills main.py (docs/OPEN-ISSUE-microbit-freeze.md).
+def test_decode_status_reads_ascii_digits():
+    assert decode_status(ord("0")) == 0
+    assert decode_status(ord("3")) == 3
+    assert decode_status(ord("7")) == 7
+
+
+def test_decode_status_rejects_anything_that_is_not_a_digit():
+    # A raw control byte or other junk must not be mistaken for a state;
+    # -1 is outside the icon table, so main.py shows Image.SAD for it.
+    assert decode_status(0x03) == -1
+    assert decode_status(ord("A")) == -1
+    assert decode_status(ord("/")) == -1
+    assert decode_status(ord(":")) == -1

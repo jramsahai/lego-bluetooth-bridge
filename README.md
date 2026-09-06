@@ -139,37 +139,49 @@ cd esp32
 ### micro:bit
 
 ```bash
-python3 -m pip install uflash
 cd microbit
+python3 -m venv .venv && .venv/bin/pip install uflash pytest   # once
 ./flash.sh
 ```
 
-`flash.sh` runs `python3 -m uflash main.py`. Since `uflash` only flashes a
-single script, if the display shows a scrolling MicroPython error instead of
-the target icon at boot, `shaping.py` did not get bundled with it — see
-`docs/BRINGUP.md` for the fix.
+`flash.sh` prefers `microbit/.venv` if it exists (this Mac's system Python is
+externally managed), otherwise whatever `python3` is on your `PATH`. It runs
+`build_bundle.py`, which inlines `shaping.py` into `main.py` at flash time
+and flashes the result as one script — `uflash` only ever flashes a single
+file, and putting `shaping.py` on the device separately with `microfs` does
+not work here, because `main.py`'s `uart.init(tx=pin0, rx=pin1)` takes the
+USB REPL away almost immediately after boot. `shaping.py` stays the single
+source of truth and stays under test; nothing hand-copied is ever flashed.
+
+Unplug the micro:bit from the ESP32's `3V` before connecting its USB cable
+to flash (see the wiring note above).
 
 ## Status-icon legend
 
 The ESP32 has no display of its own, so it reports its state as a single
-byte at 5 Hz, which the micro:bit renders on its LED matrix:
+byte at 5 Hz, which the micro:bit renders on its LED matrix. On the wire the
+status travels as the ASCII digit `'0'`..`'7'` (0x30..0x37), **never as the
+raw value**: the micro:bit's `uart.init(tx=pin0, rx=pin1)` puts MicroPython's
+own console on `P1`, so a raw `0x03` (`CALIBRATING`) is Ctrl-C to it and
+silently kills `main.py` — see `docs/OPEN-ISSUE-microbit-freeze.md`.
 
-| Byte | ESP32 state      | micro:bit icon (`Image.*`) |
-|------|------------------|------------------------------|
-| 0    | `BOOT`           | `DIAMOND_SMALL`              |
-| 1    | `BLE_SCANNING`   | `DIAMOND`                    |
-| 2    | `CONNECTED`      | `YES`                        |
-| 3    | `CALIBRATING`    | `ALL_CLOCKS[0]`               |
-| 4    | `READY_DISARMED` | `SQUARE_SMALL`                |
-| 5    | `ARMED`          | `HEART`                      |
-| 6    | `FAILSAFE`       | `NO`                          |
-| 7    | `ERROR`          | `SKULL`                      |
+| Status | Wire byte | ESP32 state      | micro:bit icon (`Image.*`) |
+|--------|-----------|------------------|------------------------------|
+| 0      | `'0'`     | `BOOT`           | `DIAMOND_SMALL`              |
+| 1      | `'1'`     | `BLE_SCANNING`   | `DIAMOND`                    |
+| 2      | `'2'`     | `CONNECTED`      | `YES`                        |
+| 3      | `'3'`     | `CALIBRATING`    | `ALL_CLOCKS[0]`              |
+| 4      | `'4'`     | `READY_DISARMED` | `SQUARE_SMALL`               |
+| 5      | `'5'`     | `ARMED`          | `HEART`                      |
+| 6      | `'6'`     | `FAILSAFE`       | `NO`                         |
+| 7      | `'7'`     | `ERROR`          | `SKULL`                      |
 
-Any other/unrecognized byte value shows `Image.SAD`, but that requires an
-actual out-of-range byte to arrive over UART — it is not what you see before
-anything has been sent. With nothing yet wired to `P0`/`P1` (e.g. micro:bit
-powered up standalone), `status` simply stays at its initial value of 0, so
-the display shows `DIAMOND_SMALL` (the `BOOT` icon), not `SAD`.
+Any other byte (a non-digit, or a digit with no icon) shows `Image.SAD`, but
+that requires an actual unrecognized byte to arrive over UART — it is not
+what you see before anything has been sent. With nothing yet wired to
+`P0`/`P1` (e.g. micro:bit powered up standalone), `status` simply stays at
+its initial value of 0, so the display shows `DIAMOND_SMALL` (the `BOOT`
+icon), not `SAD`.
 
 ## Running the tests
 
@@ -181,20 +193,26 @@ a desktop:
 # and the node-poweredup queue wedge reproduction
 cd mac-harness && npm test
 
-# ESP32: frame parsing/checksum and steering/slew math, no hardware or Arduino needed
+# ESP32: frame parsing/checksum, status wire encoding, steering/slew math,
+# the drive power band and the motor command bytes; no hardware or Arduino needed
 cd esp32 && ../.venv/bin/pio test -e native
 
-# micro:bit: tilt shaping (clamp, deadzone, expo) and frame building
-cd microbit && ../.venv/bin/python -m pytest test_shaping.py
+# micro:bit: tilt shaping (clamp, deadzone, expo), frame building, status decoding
+cd microbit && .venv/bin/python -m pytest test_shaping.py
 ```
 
 (Use `python3 -m pytest test_shaping.py` for the last one if you aren't using
-the project venv.)
+the `microbit/.venv` that `flash.sh` also uses.)
 
 ## Controls
 
 - **Tilt roll** (side-to-side, read on the accelerometer's X axis) steers.
 - **Tilt pitch** (forward/back, read on the accelerometer's Y axis) throttles.
+  Any tilt past the deadzone drives the motors at no less than
+  `DRIVE_MIN_POWER` (25%, `esp32/include/hw_config.h`): below that a geared
+  LEGO motor stalls against its own gearing and whines instead of turning,
+  so throttle maps onto the 25..100 band rather than 0..100. Level is still
+  exactly zero.
 - **Button A** captures the micro:bit's current orientation as the new
   neutral (resting/level) position. Hold the micro:bit however feels natural,
   then press A once before driving.
@@ -206,8 +224,3 @@ is deliberate: it means powering everything up while sitting on a table, or a
 brief signal dropout mid-drive, can never make the car move on its own. Press
 button A once (after the status icon shows `READY_DISARMED`, not before) to
 arm it and start driving.
-  Any tilt past the deadzone drives the motors at no less than
-  `DRIVE_MIN_POWER` (25%, `esp32/include/hw_config.h`): below that a geared
-  LEGO motor stalls against its own gearing and whines instead of turning,
-  so throttle maps onto the 25..100 band rather than 0..100. Level is still
-  exactly zero.

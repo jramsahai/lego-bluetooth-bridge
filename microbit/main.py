@@ -1,11 +1,12 @@
 from microbit import *
-from shaping import shape_axis, build_frame, EXPO_STEER, EXPO_THROTTLE
+from shaping import shape_axis, build_frame, decode_status, EXPO_STEER, EXPO_THROTTLE
 
 FLAG_ARMED = 0x01
 FLAG_RECAL = 0x02
 PERIOD_MS = 20          # 50 Hz
 
-# Status byte values from the ESP32, and what to show for each.
+# Status values from the ESP32, and what to show for each. On the wire
+# each arrives as the ASCII digit '0'..'7' (see decode_status for why).
 ICONS = {
     0: Image.DIAMOND_SMALL,   # BOOT
     1: Image.DIAMOND,         # BLE_SCANNING
@@ -42,6 +43,9 @@ def capture_neutral(flags):
 
 uart.init(baudrate=115200, tx=pin0, rx=pin1)
 # From here on, print() goes down the wire, not to USB. Use the display.
+# The reverse is also true: whatever the ESP32 sends is this script's
+# stdin, and a raw 0x03 there is Ctrl-C (KeyboardInterrupt, script over,
+# display frozen). That is why status comes as ASCII digits.
 
 x0, y0 = capture_neutral(0)
 have_neutral = True
@@ -71,7 +75,7 @@ while True:
     if uart.any():
         data = uart.read()
         if data:
-            status = data[-1]          # most recent status byte wins
+            status = decode_status(data[-1])   # most recent byte wins
     display.show(ICONS.get(status, Image.SAD))
 
     elapsed = running_time() - start

@@ -73,6 +73,25 @@ void test_xor_checksum_matches_the_spec_example(void) {
     TEST_ASSERT_EQUAL_UINT8(0x12, xorChecksum(body, 8));
 }
 
+// The status link is MicroPython's own console: after main.py's
+// uart.init(tx=pin0, rx=pin1), every byte the ESP32 writes lands on the
+// micro:bit's stdin, where 0x03 is Ctrl-C and raises KeyboardInterrupt in
+// the running script. Status values therefore never travel raw; they go as
+// ASCII digits. These tests pin that encoding.
+void test_status_goes_on_the_wire_as_an_ascii_digit(void) {
+    TEST_ASSERT_EQUAL_UINT8('0', statusToWire(0));
+    TEST_ASSERT_EQUAL_UINT8('3', statusToWire(3));
+    TEST_ASSERT_EQUAL_UINT8('7', statusToWire(7));
+}
+
+void test_no_status_encodes_to_a_control_byte(void) {
+    // 0x00..0x1F are console control characters (0x03 Ctrl-C, 0x04 Ctrl-D,
+    // 0x05 Ctrl-E ...). Nothing in the status range may map to one.
+    for (uint8_t s = 0; s <= 7; s++) {
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT8(0x20, statusToWire(s));
+    }
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     UNITY_BEGIN();
@@ -87,5 +106,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_rejects_trailing_junk_inside_the_body);
     RUN_TEST(test_rejects_an_empty_string);
     RUN_TEST(test_xor_checksum_matches_the_spec_example);
+    RUN_TEST(test_status_goes_on_the_wire_as_an_ascii_digit);
+    RUN_TEST(test_no_status_encodes_to_a_control_byte);
     return UNITY_END();
 }

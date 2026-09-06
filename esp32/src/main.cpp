@@ -76,9 +76,11 @@ static size_t g_lineLen = 0;
 // Set g_status and push it immediately, rather than waiting for the 5 Hz
 // timer — needed around the calibration sweep, which blocks loop() for
 // several seconds and would otherwise leave the micro:bit on a stale icon.
+// Always through statusToWire: the raw value 3 is Ctrl-C on the micro:bit's
+// console (see protocol.h).
 static void sendStatus(uint8_t s) {
     g_status = s;
-    Serial2.write(g_status);
+    Serial2.write(statusToWire(g_status));
 }
 
 void steerCallback(void *hub, byte portNumber, DeviceType deviceType, uint8_t *pData) {
@@ -183,11 +185,11 @@ static void applyControl(int steer, int throttle) {
     // Separate consecutive writes (see stopEverything for why this is
     // insurance rather than a fix).
     bool wroteDrive = false;
-    for (int i = 0; i < 2; i++) {
-        int p = HW_DRIVE_INVERT[i] ? -throttle : throttle;
     // Slew-limited throttle -> real power: lift anything non-zero onto the
     // band the motors actually turn in (see DRIVE_MIN_POWER).
     int power = throttleToPower(throttle, DRIVE_MIN_POWER, DRIVE_MAX_POWER);
+    for (int i = 0; i < 2; i++) {
+        int p = HW_DRIVE_INVERT[i] ? -power : power;
         if (!g_haveDriveCmd[i] || p != g_lastDriveCmd[i]) {
             if (wroteDrive) delay(30);
             startPower(HW_DRIVE_PORTS[i], p);
@@ -351,7 +353,7 @@ void loop() {
     static uint32_t lastStatus = 0;
     if (millis() - lastStatus >= STATUS_PERIOD_MS) {
         lastStatus = millis();
-        Serial2.write(g_status);
+        Serial2.write(statusToWire(g_status));
     }
 
     delay(2);

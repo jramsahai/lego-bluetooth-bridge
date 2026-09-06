@@ -44,3 +44,19 @@ def xor_checksum(body):
 def build_frame(steer, throttle, flags):
     body = "%d,%d,%d" % (steer, throttle, flags)
     return "!%s*%s\n" % (body, xor_checksum(body))
+
+
+def decode_status(byte):
+    """Wire byte from the ESP32 -> status 0..9, or -1 if it isn't one.
+
+    The ESP32 sends its status as the ASCII digit '0'..'7', not as the raw
+    value: after main.py's uart.init(tx=pin0, rx=pin1) this UART is also
+    MicroPython's console, and a raw 0x03 (CALIBRATING) is Ctrl-C there,
+    which raises KeyboardInterrupt inside main.py and silently ends it
+    (docs/OPEN-ISSUE-microbit-freeze.md). Anything outside '0'..'9' is not
+    a status; -1 keeps it out of main.py's icon table so it shows as SAD.
+    """
+    d = byte - 48  # ord("0")
+    if 0 <= d <= 9:
+        return d
+    return -1
