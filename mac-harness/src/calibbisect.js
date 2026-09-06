@@ -15,6 +15,17 @@ poweredUP.on("discover", async (hub) => {
   const A = await hub.waitForDeviceAtPort(PORTS[0]);
   let degA = null;
   A.on("rotate", ({ degrees }) => { degA = degrees; });
+
+  // Port B's presence is the variable that differed between the healthy and
+  // broken runs. WITH_B=0 reproduces the original (healthy) control.
+  let B = null;
+  if (process.env.WITH_B !== "0") {
+    B = await hub.waitForDeviceAtPort(PORTS[1]);
+    B.on("rotate", () => {});
+    console.log(`  (port ${PORTS[1]} acquired and subscribed)`);
+  } else {
+    console.log(`  (port ${PORTS[1]} NOT acquired - original control)`);
+  }
   await wait(400);
 
   const speedA = async (ms) => { const a = degA; await wait(ms); return Math.abs(degA - a); };

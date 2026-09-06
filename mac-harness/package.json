@@ -19,7 +19,8 @@
     "exacttest": "node src/exacttest.js",
     "pairtest": "node src/pairtest.js",
     "secondcmd": "node src/secondcmdtest.js",
-    "calibbisect": "node src/calibbisect.js"
+    "calibbisect": "node src/calibbisect.js",
+    "steerb": "node src/steerbtest.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"
