@@ -1,12 +1,27 @@
+// Interactive keyboard driving. Needs a real TTY - run it from a terminal.
+//
+// Defaults are the values measured against the real car (see
+// docs/hardware-map.md); override with env vars if the build changes.
 import { PoweredUP } from "node-poweredup";
 import { computeSteeringRange, steerToPosition } from "./steering-math.js";
 import { sweep } from "./sweep.js";
 
-const STEER_PORT = process.env.STEER_PORT || "A";
-const DRIVE_PORTS = (process.env.DRIVE_PORTS || "B,C").split(",");
-const INVERT = (process.env.DRIVE_INVERT || "false,false").split(",").map((s) => s === "true");
+const STEER_PORT = process.env.STEER_PORT || "D";
+const DRIVE_PORTS = (process.env.DRIVE_PORTS || "A,B").split(",").map((s) => s.trim());
+const INVERT = (process.env.DRIVE_INVERT || "false,false")
+  .split(",").map((s) => s.trim() === "true");
+const STEER_INVERT = process.env.STEER_INVERT === "true";
+const MAX_SPEED = Number(process.env.MAX_SPEED || 70);   // indoor-sane default
 const SWEEP_POWER = 30;
-const TIMEOUT_MS = 3000;
+
+const STEER_STEP = 25;
+const THROTTLE_STEP = 10;
+
+const UP = "\x1b[A";
+const DOWN = "\x1b[B";
+const RIGHT = "\x1b[C";
+const LEFT = "\x1b[D";
+const CTRL_C = "\x03";
 
 const poweredUP = new PoweredUP();
 
@@ -16,15 +31,16 @@ poweredUP.on("discover", async (hub) => {
   const drives = [];
   for (const p of DRIVE_PORTS) drives.push(await hub.waitForDeviceAtPort(p));
 
-  const stopA = await sweep(steer, SWEEP_POWER, { timeoutMs: TIMEOUT_MS, portName: STEER_PORT });
-  const stopB = await sweep(steer, -SWEEP_POWER, { timeoutMs: TIMEOUT_MS, portName: STEER_PORT });
+  console.log(`Calibrating steering on port ${STEER_PORT}...`);
+  const stopA = await sweep(steer, SWEEP_POWER, { portName: STEER_PORT });
+  const stopB = await sweep(steer, -SWEEP_POWER, { portName: STEER_PORT });
   const { center, halfRange } = computeSteeringRange(
     Math.min(stopA, stopB), Math.max(stopA, stopB)
   );
   await steer.gotoAngle(center, 40);
-  await hub.sleep(600);
+  await hub.sleep(700);
   await steer.resetZero();
-  console.log(`Calibrated. halfRange=${halfRange}`);
+  console.log(`Calibrated. halfRange=${halfRange}, max speed=${MAX_SPEED}\n`);
 
   let throttle = 0;
   let steerValue = 0;
@@ -33,45 +49,77 @@ poweredUP.on("discover", async (hub) => {
     for (let i = 0; i < drives.length; i++) {
       drives[i].setPower(INVERT[i] ? -throttle : throttle);
     }
-    steer.gotoAngle(steerToPosition(steerValue, halfRange), 100);
+    const s = STEER_INVERT ? -steerValue : steerValue;
+    steer.gotoAngle(steerToPosition(s, halfRange), 100);
   };
 
-  console.log(
-    "\nControls:  A/D steer   W/S throttle   SPACE stop   Q quit\n" +
-    "The car must be ON A STAND."
-  );
+  const bar = (v) => {
+    const n = Math.round(Math.abs(v) / 10);
+    const left = v < 0 ? "<".repeat(n).padStart(10) : " ".repeat(10);
+    const right = v > 0 ? ">".repeat(n).padEnd(10) : " ".repeat(10);
+    return left + "|" + right;
+  };
+
+  const hud = () => {
+    process.stdout.write(
+      `\r steer ${String(steerValue).padStart(4)} ${bar(steerValue)}   ` +
+      `throttle ${String(throttle).padStart(4)} ${bar(throttle)}   `
+    );
+  };
+
+  console.log("Controls");
+  console.log("  W / up arrow      throttle forward  (press repeatedly to go faster)");
+  console.log("  S / down arrow    throttle back / reverse");
+  console.log("  A / left arrow    steer left        D / right arrow   steer right");
+  console.log("  C                 centre the steering, keep driving");
+  console.log("  SPACE             STOP - throttle to zero, wheels straight");
+  console.log("  Q or Ctrl-C       quit (stops the car and centres the wheels)");
+  console.log(`\n  Speed capped at ${MAX_SPEED}. Raise it with MAX_SPEED=100.`);
+  console.log("  Throttle LATCHES: it holds its value until you change it or hit SPACE.\n");
 
   if (!process.stdin.isTTY) {
     console.error(
-      "\nThis script needs a real terminal for keyboard input (stdin is not a TTY).\n" +
-      "Run it from your own terminal, or use `npm run selftest` for a scripted,\n" +
-      "no-keyboard version that answers the same questions.\n"
+      "\nThis needs a real terminal for keyboard input (stdin is not a TTY).\n" +
+      "Run it from your own terminal, or use `npm run selftest` for a scripted version.\n"
     );
     for (const d of drives) d.brake();
     process.exit(1);
   }
+
+  const quit = async () => {
+    for (const d of drives) d.brake();
+    await steer.gotoAngle(0, 40);
+    process.stdout.write("\nStopped, wheels centred.\n");
+    process.exit(0);
+  };
+
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", async (key) => {
-    const k = key.toLowerCase();
-    const isCtrlC = key.charCodeAt(0) === 3;
-    if (k === "q" || isCtrlC) {
-      for (const d of drives) d.brake();
-      await steer.gotoAngle(0, 40);
-      process.exit(0);
-    }
-    switch (k) {
-      case "a": steerValue = Math.max(-100, steerValue - 20); break;
-      case "d": steerValue = Math.min(100, steerValue + 20); break;
-      case "w": throttle = Math.min(100, throttle + 10); break;
-      case "s": throttle = Math.max(-100, throttle - 10); break;
-      case " ": throttle = 0; steerValue = 0; break;
-      default: return;
+    if (key === "q" || key === "Q" || key === CTRL_C) return quit();
+
+    switch (key) {
+      case "a": case "A": case LEFT:
+        steerValue = Math.max(-100, steerValue - STEER_STEP); break;
+      case "d": case "D": case RIGHT:
+        steerValue = Math.min(100, steerValue + STEER_STEP); break;
+      case "w": case "W": case UP:
+        throttle = Math.min(MAX_SPEED, throttle + THROTTLE_STEP); break;
+      case "s": case "S": case DOWN:
+        throttle = Math.max(-MAX_SPEED, throttle - THROTTLE_STEP); break;
+      case "c": case "C":
+        steerValue = 0; break;
+      case " ":
+        throttle = 0; steerValue = 0; break;
+      default:
+        return;
     }
     apply();
-    process.stdout.write(`\r steer=${steerValue}  throttle=${throttle}      `);
+    hud();
   });
+  hud();
 });
 
+console.log("Scanning. Press the green button on the hub if it does not connect.");
 poweredUP.scan();
