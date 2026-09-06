@@ -1,8 +1,11 @@
 import { PoweredUP } from "node-poweredup";
 import { computeSteeringRange } from "./steering-math.js";
 import { sweep } from "./sweep.js";
+import { rawMotor } from "./rawmotor.js";
 
-const STEER_PORT = process.env.STEER_PORT || "A";
+// D is the measured steering port (docs/hardware-map.md). The default here
+// used to be "A", which sweeps a drive motor for six seconds and times out.
+const STEER_PORT = process.env.STEER_PORT || "D";
 const SWEEP_POWER = 30;
 const TIMEOUT_MS = 3000;
 
@@ -11,7 +14,9 @@ const poweredUP = new PoweredUP();
 poweredUP.on("discover", async (hub) => {
   await hub.connect();
   console.log(`Connected to ${hub.name}. Calibrating steering on port ${STEER_PORT}.`);
-  const motor = await hub.waitForDeviceAtPort(STEER_PORT);
+  // rawMotor bypasses node-poweredup's command queue, which can wedge a port
+  // for the whole session (see src/rawmotor.js).
+  const motor = rawMotor(await hub.waitForDeviceAtPort(STEER_PORT));
 
   const stopA = await sweep(motor, SWEEP_POWER, { timeoutMs: TIMEOUT_MS, portName: STEER_PORT });
   console.log(`  stop 1 at POS = ${stopA}`);

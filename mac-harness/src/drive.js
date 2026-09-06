@@ -5,6 +5,7 @@
 import { PoweredUP } from "node-poweredup";
 import { computeSteeringRange, steerToPosition } from "./steering-math.js";
 import { sweep } from "./sweep.js";
+import { rawMotor } from "./rawmotor.js";
 
 const STEER_PORT = process.env.STEER_PORT || "D";
 const DRIVE_PORTS = (process.env.DRIVE_PORTS || "A,B").split(",").map((s) => s.trim());
@@ -32,21 +33,26 @@ const poweredUP = new PoweredUP();
 
 poweredUP.on("discover", async (hub) => {
   await hub.connect();
-  const steer = await hub.waitForDeviceAtPort(STEER_PORT);
+  // Every motor command goes through rawMotor, which writes the port output
+  // command straight to the hub instead of through node-poweredup's per-port
+  // queue. That queue wedges permanently when a second write to the hub is
+  // issued before the first one's BLE acknowledgement (~55 ms) returns, after
+  // which the library silently never writes another command for that port -
+  // the "port A ignores everything" fault. See src/rawmotor.js and
+  // docs/OPEN-ISSUE-port-a.md.
+  const steer = rawMotor(await hub.waitForDeviceAtPort(STEER_PORT));
   const drives = [];
-  for (const p of DRIVE_PORTS) drives.push(await hub.waitForDeviceAtPort(p));
+  for (const p of DRIVE_PORTS) drives.push(rawMotor(await hub.waitForDeviceAtPort(p)));
 
-  // Calibration is skippable. Two reasons:
-  //  1. The steering range is already measured and recorded, so re-sweeping
-  //     before every drive costs six seconds for a number we know.
-  //  2. Running the calibration is what precedes port A refusing its commanded
-  //     power (see docs/BRINGUP.md). The mechanism is not understood, so this
-  //     avoids the sequence rather than claiming to fix it.
-  // Skipping relies on the encoder zero set by an earlier calibration, which
-  // the hub keeps until it is powered off. After a hub power cycle, run
-  // `npm run calibrate` once, or set SKIP_CALIB=0 here.
+  // Calibrate the steering on every start, as the ESP32 firmware does: the
+  // wheels may have been moved by hand since the hub last zeroed its encoder.
+  // (Skipping was the default while the port A fault was unexplained, because
+  // the calibration preceded it. That fault is traced to the library queue
+  // above and fixed by rawMotor, so the sweep is back on.)
+  // SKIP_CALIB=1 reuses the recorded range instead, which only makes sense if
+  // the hub has not been power-cycled since the last calibration.
   let halfRange;
-  if (process.env.SKIP_CALIB === "0") {
+  if (process.env.SKIP_CALIB !== "1") {
     console.log(`Calibrating steering on port ${STEER_PORT}...`);
     const stopA = await sweep(steer, SWEEP_POWER, { portName: STEER_PORT });
     const stopB = await sweep(steer, -SWEEP_POWER, { portName: STEER_PORT });
@@ -59,9 +65,8 @@ poweredUP.on("discover", async (hub) => {
     console.log(`Calibrated. halfRange=${halfRange}`);
   } else {
     halfRange = Number(process.env.STEER_HALF_RANGE || 105);
-    console.log(`Using recorded halfRange=${halfRange} (no sweep).`);
-    console.log("If the hub was power-cycled since the last calibration, run");
-    console.log("`npm run calibrate` first, or use SKIP_CALIB=0 to sweep now.");
+    console.log(`SKIP_CALIB=1: using recorded halfRange=${halfRange} (no sweep).`);
+    console.log("Only valid if the hub has not been power-cycled since the last calibration.");
     steer.gotoAngle(0, 40);
     await hub.sleep(600);
   }
@@ -116,22 +121,20 @@ poweredUP.on("discover", async (hub) => {
     process.stdout.write(`\r\x1b[K[cmd] ${msg}\n`);
   };
 
-  // Two motor commands issued in the same tick race over BLE and one is
-  // silently dropped - measured on the real car as the first of two brake()
-  // calls having no effect at all. So separate them in time.
-  //
-  // Do NOT await the library calls to achieve this: node-poweredup's motor
-  // methods return a promise that never settles, so awaiting one deadlocks
-  // the script with the car still driving. Await a timer instead.
-  // 60ms proved reliable on the real car and 20ms did not, so 40ms with the
-  // change-gating (which means we rarely send at all) is a comfortable middle.
+  // Commands to the two drive motors are spaced by a timer. This was
+  // introduced when back-to-back commands appeared to drop one of them; the
+  // real cause was the library queue wedge described above, which the raw
+  // writes avoid, so the spacing is no longer load-bearing. It is kept because
+  // it is cheap and mirrors the ESP32 firmware's delay(30). (rawMotor's
+  // promises settle on the BLE write acknowledgement, so awaiting them is
+  // harmless - unlike node-poweredup's, which wait on hub feedback.)
   const gap = () => new Promise((r) => setTimeout(r, 40));
   const apply = async () => {
     const power = toPower(throttle);
     if (power !== lastPower) {
       for (let i = 0; i < drives.length; i++) {
-        // brake() actively stops; setPower(0) leaves the motor coasting -
-        // measured at 56 degrees of continued rotation on the real car.
+        // Both brake() and setPower(0) stop the motor (docs/BRINGUP.md);
+        // brake() is the sharper of the two.
         if (power === 0) {
           drives[i].brake();
           await gap();

@@ -147,7 +147,8 @@ static void applyControl(int steer, int throttle) {
         g_lastSteerCmd = pos;
         g_haveSteerCmd = true;
     }
-    // Same race applies to drive commands: separate consecutive writes.
+    // Separate consecutive writes (see stopEverything for why this is
+    // insurance rather than a fix).
     bool wroteDrive = false;
     for (int i = 0; i < 2; i++) {
         int p = HW_DRIVE_INVERT[i] ? -throttle : throttle;
@@ -167,18 +168,15 @@ static void applyControl(int steer, int throttle) {
 static void stopEverything() {
     g_throttleNow = 0;
     if (g_alreadyStopped) return;
-    // ANY two motor commands issued back to back are unreliable - and the
-    // damage is done by the STARTING commands, not the stopping ones. Measured
-    // on the real car: with two setPower commands sent in the same tick, that
-    // port then ignored every later stop, whatever the stop was or how far
-    // apart the stops were spaced. Space the two setPower calls by ~60ms and
-    // every stop method worked, including a plain power 0.
-    // Legoino writes over BLE without waiting for a response, so back-to-back
-    // writes race. In a failsafe that means the car keeps driving on one axle.
-    //
-    // So: space the two commands apart, then repeat the pair. A few
-    // milliseconds is nothing against the 200 ms failsafe budget, and a stop
-    // is the one command worth sending twice.
+    // The "port ignores every later command after two back-to-back writes"
+    // fault seen from the Mac harness was traced to node-poweredup's per-port
+    // command queue wedging on the Mac, not to the hub dropping writes
+    // (docs/OPEN-ISSUE-port-a.md). Legoino has no such queue: it writes each
+    // command straight to the characteristic, so that fault cannot happen
+    // here. The spacing below is kept anyway as cheap insurance against the
+    // hub's two-deep output buffer, and a stop is the one command worth
+    // sending twice. A few milliseconds is nothing against the 200 ms
+    // failsafe budget.
     //
     // stopTachoMotor, NOT stopBasicMotor: Legoino's stopBasicMotor is
     // setBasicMotorSpeed(port, 0), a raw power value with no braking style,
@@ -223,7 +221,7 @@ void loop() {
             // hub reconnected mid-drive with a stale throttle still applied
             // on its side, stop it now rather than letting it run through
             // the settle delay and the calibration sweep.
-            // Spaced apart: back-to-back writes race and one is dropped.
+            // Spaced apart, as everywhere else (see stopEverything).
             for (int i = 0; i < 2; i++) {
                 myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
                 delay(30);

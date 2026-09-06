@@ -20,7 +20,8 @@
     "pairtest": "node src/pairtest.js",
     "secondcmd": "node src/secondcmdtest.js",
     "calibbisect": "node src/calibbisect.js",
-    "steerb": "node src/steerbtest.js"
+    "steerb": "node src/steerbtest.js",
+    "trace": "node src/tracetest.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"

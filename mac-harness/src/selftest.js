@@ -6,6 +6,7 @@
 import { PoweredUP } from "node-poweredup";
 import { computeSteeringRange, steerToPosition } from "./steering-math.js";
 import { sweep } from "./sweep.js";
+import { rawMotor } from "./rawmotor.js";
 
 const STEER_PORT = process.env.STEER_PORT || "D";
 const DRIVE_PORTS = (process.env.DRIVE_PORTS || "A,B").split(",");
@@ -21,9 +22,11 @@ const poweredUP = new PoweredUP();
 
 poweredUP.on("discover", async (hub) => {
   await hub.connect();
-  const steer = await hub.waitForDeviceAtPort(STEER_PORT);
+  // rawMotor bypasses node-poweredup's command queue, which can wedge a port
+  // for the whole session (see src/rawmotor.js).
+  const steer = rawMotor(await hub.waitForDeviceAtPort(STEER_PORT));
   const drives = [];
-  for (const p of DRIVE_PORTS) drives.push(await hub.waitForDeviceAtPort(p));
+  for (const p of DRIVE_PORTS) drives.push(rawMotor(await hub.waitForDeviceAtPort(p)));
 
   console.log(`\nCalibrating steering on port ${STEER_PORT}...`);
   const stopA = await sweep(steer, SWEEP_POWER, { portName: STEER_PORT });

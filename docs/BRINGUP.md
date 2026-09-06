@@ -1,10 +1,16 @@
 # Bring-up: what still has to happen
 
-> **OPEN ISSUE — read first:** port A can stop accepting motor commands and run
-> at full speed regardless of what it is told. See `docs/OPEN-ISSUE-port-a.md`.
-> It is worked around in the Mac harness, but the firmware calibrates on every
-> connect and cannot apply the same workaround. If it reproduces there, the car
-> drives with one dead axle and the 200 ms failsafe cannot stop that axle.
+> **Port A issue — root cause found and confirmed on the car.** Port A
+> "ignoring" commands was node-poweredup's per-port command queue wedging on
+> the Mac: when a second write to the hub is issued before the first one's BLE
+> acknowledgement (~55 ms) returns, the BLE layer drops the first write's
+> callback, node-poweredup never moves that command out of its queue, and it
+> never writes another command for that port. The hub kept running the last
+> power it had received. Seen byte-for-byte with `npm run trace`, reproduced
+> offline in `mac-harness/test/poweredup-queue.test.js`, and fixed by writing
+> motor commands directly (`mac-harness/src/rawmotor.js`). The ESP32 firmware
+> (Legoino) writes without waiting for acknowledgements and has no such queue,
+> so it is not affected. See `docs/OPEN-ISSUE-port-a.md`.
 
 Everything in this repo is built and unit-tested. **None of it has touched
 real hardware.** This document exists because that is the single most
@@ -310,12 +316,19 @@ style, while `stopTachoMotor` routes through `setTachoMotorSpeed` with
 command is the right API family for them either way.
 
 
-## Hardware finding: consecutive motor commands race, and one is dropped
+## Hardware finding: "consecutive motor commands race" was a Mac library bug
 
-This is the most important thing the harness found, and it applies to the
-firmware as much as to the Mac scripts.
+> **Superseded.** The explanation in this section - that the hub drops one of
+> two back-to-back writes - was wrong. The measurements below are real, but the
+> mechanism is node-poweredup's per-port command queue wedging, after which the
+> library silently stops writing to that port for the rest of the session. See
+> `docs/OPEN-ISSUE-port-a.md`. The harness now bypasses that queue
+> (`mac-harness/src/rawmotor.js`). Legoino on the ESP32 writes directly and has
+> no such queue, so this does not apply to the firmware; its `delay(30)` spacing
+> is kept as cheap insurance, not as a fix. The original text follows for the
+> record.
 
-Braking two motors in a tight loop does not work. Bisected on the real car:
+Braking two motors in a tight loop did not work. Bisected on the real car:
 
 ```
   1. one motor,  one speed,  no steer cmd         0  stopped
@@ -348,10 +361,11 @@ Use 40 ms in the harness and `delay(30)` in the firmware. 20 ms was measured as
 not enough.
 
 **Do NOT try to fix this by awaiting the library call.** node-poweredup's motor
-methods return a promise that never settles, so `await motor.brake()` deadlocks
-the script - with the car still driving, which is worse than the original bug.
-This was tried and it hung the test harness mid-run with the wheels turning.
-Await a timer, never the library.
+methods return a promise that only settles on hub feedback, so on a wedged port
+`await motor.brake()` never returns - with the car still driving, which is worse
+than the original bug. This was tried and it hung the test harness mid-run with
+the wheels turning. (The promises from `rawMotor` settle on the BLE write
+acknowledgement and are safe to await.)
 
 `stopEverything()` additionally sends the whole stop pair twice. A stop is the
 one command worth repeating, and this is exactly the failure it guards against:
