@@ -1,5 +1,11 @@
 # Bring-up: what still has to happen
 
+> **OPEN ISSUE — read first:** port A can stop accepting motor commands and run
+> at full speed regardless of what it is told. See `docs/OPEN-ISSUE-port-a.md`.
+> It is worked around in the Mac harness, but the firmware calibrates on every
+> connect and cannot apply the same workaround. If it reproduces there, the car
+> drives with one dead axle and the 200 ms failsafe cannot stop that axle.
+
 Everything in this repo is built and unit-tested. **None of it has touched
 real hardware.** This document exists because that is the single most
 important thing to understand before you plug anything in. Read it before you
