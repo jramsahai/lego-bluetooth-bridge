@@ -10,7 +10,8 @@
     "discover": "node src/discover.js",
     "calibrate": "node src/calibrate.js",
     "drive": "node src/drive.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "selftest": "node src/selftest.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"

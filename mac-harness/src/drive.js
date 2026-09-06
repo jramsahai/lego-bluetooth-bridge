@@ -41,6 +41,15 @@ poweredUP.on("discover", async (hub) => {
     "The car must be ON A STAND."
   );
 
+  if (!process.stdin.isTTY) {
+    console.error(
+      "\nThis script needs a real terminal for keyboard input (stdin is not a TTY).\n" +
+      "Run it from your own terminal, or use `npm run selftest` for a scripted,\n" +
+      "no-keyboard version that answers the same questions.\n"
+    );
+    for (const d of drives) d.brake();
+    process.exit(1);
+  }
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
