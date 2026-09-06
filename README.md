@@ -66,11 +66,20 @@ port-output commands. This project is another such client. That means:
 | `P0`      | `GPIO16` (RX2) | frames, micro:bit -> ESP32 |
 | `P1`      | `GPIO17` (TX2) | status, ESP32 -> micro:bit |
 | `GND`     | `GND`          | common ground               |
-| `3V`      | `3V3`          | power for the micro:bit     |
+| `3V`      | `3V3`          | power for the micro:bit (optional, see below) |
 
 Both boards run 3.3 V logic, so the UART lines connect directly — no level
-shifting needed. A single USB power bank feeds the ESP32; the ESP32's onboard
-regulator feeds the micro:bit through its `3V` pad.
+shifting needed.
+
+**Power, as verified on the car (2026-09-06):** a USB power bank with two
+ports, one cable to each board, and only `P0`, `P1` and `GND` between them.
+No `3V` wire. This is the configuration the whole stack was brought up and
+driven with, and it keeps each board on its own regulator.
+
+The alternative, for a single-port bank, is the `3V`↔`3V3` wire: the ESP32's
+onboard regulator then feeds the micro:bit through its `3V` pad. That works
+electrically but has not been exercised under motor load, and it comes with
+one rule:
 
 > **Never plug the micro:bit's USB cable in while it is powered from the
 > ESP32's `3V3` pin.** Doing so back-feeds the micro:bit's onboard regulator
