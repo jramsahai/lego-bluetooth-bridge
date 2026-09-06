@@ -68,7 +68,9 @@ poweredUP.on("discover", async (hub) => {
   // Let the motor decelerate BEFORE judging it, otherwise the stopping
   // transient reads as "still turning" - the mistake that sent an earlier
   // round of this debugging down a blind alley.
+  let verifyPending = 0;
   const verifyStopped = (i) => {
+    verifyPending++;
     setTimeout(() => {
       const before = driveDeg[i];
       setTimeout(() => {
@@ -80,6 +82,7 @@ poweredUP.on("discover", async (hub) => {
             ? `port ${DRIVE_PORTS[i]} CONFIRMED STOPPED`
             : `port ${DRIVE_PORTS[i]} STILL TURNING (${moved} deg/1.2s, 900ms after the stop)`
         );
+        verifyPending--;
       }, 1200);
     }, 900);
   };
@@ -161,6 +164,10 @@ poweredUP.on("discover", async (hub) => {
   }
 
   const quit = async () => {
+    if (verifyPending > 0) {
+      process.stdout.write("\r\x1b[K[cmd] waiting for stop verification to finish...\n");
+      await new Promise((r) => setTimeout(r, 2400));
+    }
     for (const d of drives) d.brake();
     await steer.gotoAngle(0, 40);
     process.stdout.write("\nStopped, wheels centred.\n");
@@ -209,6 +216,8 @@ poweredUP.on("discover", async (hub) => {
         for (let i = 0; i < drives.length; i++) drives[i].brake();
         lastPower = 0;
         log("SPACE: direct brake() on all drive motors");
+        log("     watch the wheels for ~3s; verification below. Do NOT quit yet.");
+        for (let i = 0; i < drives.length; i++) verifyStopped(i);
         break;
       default:
         return;
