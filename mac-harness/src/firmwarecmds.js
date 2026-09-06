@@ -62,8 +62,13 @@ poweredUP.on("discover", async (hub) => {
     drives[0].legoinoStopTacho();
     const after = (await movedAfterSettle())[0];
     const errs = errorsSince(mark);
-    report("stopTachoMotor bytes stop a running motor", after <= 3 && errs.length === 0,
-      `running=${running} after=${after} deg/1.2s, hub errors=${errs.length}`);
+    // A stop can only be judged on a motor that was moving. Observed once on
+    // the car (2026-09-06): the motor had not started when this ran, and the
+    // line would otherwise have read PASS for nothing.
+    const moving = running > 20;
+    report("stopTachoMotor bytes stop a running motor", moving && after <= 3 && errs.length === 0,
+      `running=${running} after=${after} deg/1.2s, hub errors=${errs.length}` +
+      (moving ? "" : "  <- INCONCLUSIVE: motor never ran; rerun (line 4 also covers this stop)"));
     for (const e of errs) console.log(`        ${e}`);
     await stopAll();
   }

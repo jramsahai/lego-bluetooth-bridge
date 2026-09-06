@@ -268,10 +268,16 @@ stop that has been measured on the car. It does **not** use Legoino's
 `stopTachoMotor`. That function sends sub-command `0x01` followed by
 max-power, brake-style and profile bytes; in LWP3, `0x01` is a one-byte
 StartPower, so those trailing bytes are not part of any command and the hub's
-response to them is unmeasured. `npm run firmwarecmds` in the harness sends
-those exact bytes to find out, for the record, but the firmware no longer
-depends on the answer. The calibration sweep likewise uses raw StartPower at
-30, as the harness sweep does, instead of `setTachoMotorSpeed`.
+response to them is not defined by the spec. `npm run firmwarecmds` in the
+harness sends those exact bytes, and on 2026-09-06 the hub tolerated them:
+Legoino's sweep bytes (speed byte 37) drove the steering to the same end stop
+the validated sweep finds, and Legoino's stop bytes (speed byte 127) brought
+both drive motors from ~230 degrees per half second to zero, with no Generic
+Error from the hub. So this hub reads the first payload byte of the `0x01`
+form as StartPower and ignores the rest. The firmware still does not rely on
+that: it sends the spec-defined bytes, pinned by test to the harness's. The
+calibration sweep likewise uses raw StartPower at 30, as the harness sweep
+does, instead of `setTachoMotorSpeed`.
 
 Every motor command the firmware sends is built by `esp32/lib/ctrl/lwp3.cpp`
 and written with Legoino's raw `WriteValue`, not through Legoino's motor
