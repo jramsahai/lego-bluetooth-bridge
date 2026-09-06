@@ -3,27 +3,40 @@
 #include "hw_config.h"
 #include "control.h"
 #include "protocol.h"
+#include "lwp3.h"
 
 Lpf2Hub myHub;
 
-// The two motor commands the Mac harness has proven on the car
-// (docs/OPEN-ISSUE-port-a.md): StartPower via WriteDirectModeData mode 0
-// (Legoino's setBasicMotorSpeed) and the same command with value 127, which
-// the hub treats as brake. Legoino's stopTachoMotor / setTachoMotorSpeed
-// send sub-command 0x01 with trailing bytes that are not part of that LWP3
-// command; what the hub does with them is unmeasured, so the firmware does
-// not use them.
-static void startPower(uint8_t port, int power) {
-    myHub.setBasicMotorSpeed(port, power);
+// Every motor command is built by lib/ctrl/lwp3 and written with Legoino's
+// raw WriteValue, so the bytes on the wire are exactly the ones the Mac
+// harness has measured on the car (mac-harness/src/rawmotor.js; the two are
+// pinned to the same test vectors). Legoino's own motor helpers are not used
+// for output: setBasicMotorSpeed / setAbsoluteMotorPosition rescale their
+// arguments through MapSpeed (100 -> 126, 0 -> 127), and setTachoMotorSpeed /
+// stopTachoMotor send a sub-command 0x01 with trailing bytes LWP3 does not
+// define. None of that has been measured; these bytes have.
+static void writeCommand(uint8_t *cmd, size_t n) {
+    myHub.WriteValue(cmd, (int)n);
 }
 
-// Written as raw bytes rather than setBasicMotorSpeed(port, 127), because
-// Legoino scales its argument through MapSpeed, which maps 0..100 onto
-// 0..126 -- MapSpeed(127) is 160, i.e. int8 -96, nearly full reverse. The
-// brake value 127 has to reach the wire unscaled.
+static void startPower(uint8_t port, int power) {
+    uint8_t cmd[6];
+    writeCommand(cmd, lwp3StartPower(port, power, cmd));
+}
+
 static void brakeMotor(uint8_t port) {
-    byte cmd[6] = {0x81, port, 0x11, 0x51, 0x00, 0x7F};   // StartPower 127 = brake
-    myHub.WriteValue(cmd, 6);
+    uint8_t cmd[6];
+    writeCommand(cmd, lwp3StartPower(port, LWP3_POWER_BRAKE, cmd));
+}
+
+static void gotoAbsolute(uint8_t port, int speed, int32_t position, uint8_t maxPower) {
+    uint8_t cmd[12];
+    writeCommand(cmd, lwp3GotoAbsolute(port, position, speed, maxPower, LWP3_BRAKE_STYLE_BRAKE, cmd));
+}
+
+static void presetEncoder(uint8_t port, int32_t position) {
+    uint8_t cmd[9];
+    writeCommand(cmd, lwp3PresetEncoder(port, position, cmd));
 }
 
 static volatile int32_t g_steerPos = 0;
@@ -122,9 +135,9 @@ bool calibrateSteering() {
     Serial.printf("[calib] span %d..%d  center=%d  halfRange=%d\n",
                   (int)lo, (int)hi, (int)g_range.center, (int)g_range.halfRange);
 
-    myHub.setAbsoluteMotorPosition(HW_STEER_PORT, 40, g_range.center, STEER_MAX_POWER);
+    gotoAbsolute(HW_STEER_PORT, 40, g_range.center, STEER_MAX_POWER);
     delay(800);
-    myHub.setAbsoluteMotorEncoderPosition(HW_STEER_PORT, 0);
+    presetEncoder(HW_STEER_PORT, 0);
     Serial.println("[calib] centered and zeroed");
     return true;
 }
@@ -163,7 +176,7 @@ static void applyControl(int steer, int throttle) {
     int s = HW_STEER_INVERT ? -steer : steer;
     int32_t pos = steerToPosition(s, g_range.halfRange);
     if (!g_haveSteerCmd || pos != g_lastSteerCmd) {
-        myHub.setAbsoluteMotorPosition(HW_STEER_PORT, STEER_SPEED, pos, STEER_MAX_POWER);
+        gotoAbsolute(HW_STEER_PORT, STEER_SPEED, pos, STEER_MAX_POWER);
         g_lastSteerCmd = pos;
         g_haveSteerCmd = true;
     }
@@ -174,7 +187,7 @@ static void applyControl(int steer, int throttle) {
         int p = HW_DRIVE_INVERT[i] ? -throttle : throttle;
         if (!g_haveDriveCmd[i] || p != g_lastDriveCmd[i]) {
             if (wroteDrive) delay(30);
-            myHub.setBasicMotorSpeed(HW_DRIVE_PORTS[i], p);
+            startPower(HW_DRIVE_PORTS[i], p);
             wroteDrive = true;
             g_lastDriveCmd[i] = p;
             g_haveDriveCmd[i] = true;
@@ -212,7 +225,7 @@ static void stopEverything() {
         g_haveDriveCmd[i] = true;
     }
     if (g_calibrated) {
-        myHub.setAbsoluteMotorPosition(HW_STEER_PORT, 60, 0, STEER_MAX_POWER);
+        gotoAbsolute(HW_STEER_PORT, 60, 0, STEER_MAX_POWER);
         g_lastSteerCmd = 0;
         g_haveSteerCmd = true;
     }

@@ -22,7 +22,7 @@ touch the car.
 - **`esp32/` compiles for the target (first built 2026-09-05, Legoino 1.1.0),
   but has never run on a board.** `pio run -e esp32dev` succeeds, so every
   Legoino call in `esp32/src/main.cpp` matches the library's real headers.
-  The `native` environment (pure C++ logic, 21 test cases) also passes. There
+  The `native` environment (pure C++ logic, 29 test cases) also passes. There
   is still no ESP32 board and no observation of the firmware on hardware.
 
   Getting that first build to pass needed one change, and it was not in
@@ -314,11 +314,14 @@ those exact bytes to find out, for the record, but the firmware no longer
 depends on the answer. The calibration sweep likewise uses raw StartPower at
 30, as the harness sweep does, instead of `setTachoMotorSpeed`.
 
-`brakeMotor()` writes the six bytes itself rather than calling
-`setBasicMotorSpeed(port, 127)`, because Legoino rescales its speed argument
-through `MapSpeed`, which maps 0..100 onto 0..126: `MapSpeed(127)` is 160,
-which as an int8 is -96 — nearly full reverse, not a brake. The same rescaling
-means the sweep's `SWEEP_POWER = 30` reaches the hub as 37.
+Every motor command the firmware sends is built by `esp32/lib/ctrl/lwp3.cpp`
+and written with Legoino's raw `WriteValue`, not through Legoino's motor
+helpers. Those helpers rescale power and speed through `MapSpeed` (0 becomes
+127, 1..100 becomes 1..126, -1..-100 becomes 255..128), so `setBasicMotorSpeed(port, 100)`
+puts 126 on the wire, a value LWP3 does not define for StartPower and the car
+has never been shown to obey. `test/test_lwp3` pins the firmware's bytes to the
+same vectors as `mac-harness/test/rawmotor.test.js`, so what the firmware sends
+is exactly what the harness has measured on the car.
 
 
 ## Hardware finding: "consecutive motor commands race" was a Mac library bug
