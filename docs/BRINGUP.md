@@ -266,33 +266,39 @@ do something unexpected.
   the first.
 
 
-## Hardware finding: power 0 coasts, it does not stop
+## Hardware finding: both stop commands work (an earlier claim here was wrong)
 
-Measured on the real car with `npm run stoptest`:
+An earlier version of this document stated that `setPower(0)` only coasts while
+`brake()` stops the motor. **That was wrong**, and it was wrong because of a bad
+measurement, so it is worth recording how.
+
+The first test called `setPower(0)`, measured 56 degrees of rotation, then called
+`brake()` and measured 0 - and concluded brake was the one that worked. But the
+measurement began the instant each command was sent, so it counted the motor's
+deceleration as "still turning", and by the time `brake()` was called the motor
+had already spent 1.5 seconds coasting to a near stop. The test credited brake
+with a stop that had already happened.
+
+Re-measured with a 900 ms settling delay before judging:
 
 ```
-starting motor at power 40...
-  moving: 745 deg in 1500ms
-
-trying setPower(0) ...
-  still turning: 56 deg in 1500ms
-trying brake() ...
-  STOPPED (0 deg in 1500ms)  <=== THIS ONE WORKS
+  setPower(0)    running= 585  during-stop=  69  AFTER=   0  <-- fully stopped
+  brake()        running= 595  during-stop=  33  AFTER=   0  <-- fully stopped
 ```
 
-A TechnicLargeLinearMotor commanded to power 0 **coasts** — it keeps turning
-for a noticeable distance. Only an explicit brake stops it.
+**Both commands fully stop the motor.** `brake()` is somewhat more abrupt (33
+degrees of stopping transient against 69), which is a reason to prefer it, but
+either one stops the car.
 
-This mattered in two places, both since fixed:
+The lesson worth keeping: when timing a physical process, let it settle before
+judging it, or you measure the transient instead of the outcome.
 
-- **The harness** (`drive.js`) used `setPower(0)` for zero throttle, so pressing
-  SPACE zeroed the display and centred the steering while the car kept rolling.
-  It now calls `brake()`.
-- **The firmware** used Legoino's `stopBasicMotor()` everywhere it stopped the
-  drive motors, including inside the 200 ms failsafe. That function is literally
-  `setBasicMotorSpeed(port, 0)`, so the failsafe would have let the car coast
-  rather than stopping it. It now calls `stopTachoMotor()`, which routes through
-  `setTachoMotorSpeed` with `BrakingStyle::BRAKE`.
+### What this means for the firmware
 
-If you ever add a new stop path, use `stopTachoMotor` (firmware) or `brake()`
-(harness). Never power 0.
+The firmware still uses `stopTachoMotor` rather than `stopBasicMotor`, and that
+change stands - but on different grounds than originally claimed. It rests on
+reading Legoino's source, not on the flawed measurement: `stopBasicMotor` is
+`setBasicMotorSpeed(port, 0)`, which sends a raw power value with no braking
+style, while `stopTachoMotor` routes through `setTachoMotorSpeed` with
+`BrakingStyle::BRAKE`. These are tacho motors with encoders, so the tacho
+command is the right API family for them either way.

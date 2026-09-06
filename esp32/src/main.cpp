@@ -165,11 +165,13 @@ static void stopEverything() {
     if (g_alreadyStopped) return;
     for (int i = 0; i < 2; i++) {
         // stopTachoMotor, NOT stopBasicMotor. Legoino's stopBasicMotor is
-        // setBasicMotorSpeed(port, 0), which sends power 0 and lets the motor
-        // COAST — measured on the real car as 56 degrees of continued rotation
-        // after the command. stopTachoMotor routes through setTachoMotorSpeed
-        // with BrakingStyle::BRAKE and actually stops it. A failsafe that
-        // coasts is not a failsafe.
+        // setBasicMotorSpeed(port, 0): a raw power value with no braking style.
+        // stopTachoMotor routes through setTachoMotorSpeed with
+        // BrakingStyle::BRAKE, which is both the correct API family for an
+        // encoder motor and an explicit brake rather than an implicit one.
+        // (Measured on the real car, power 0 does also stop these motors, just
+        // less sharply — see docs/BRINGUP.md. The choice here is about being
+        // explicit in a failsafe path, not about power 0 being broken.)
         myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
         g_lastDriveCmd[i] = 0;
         g_haveDriveCmd[i] = true;

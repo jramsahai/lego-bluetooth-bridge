@@ -13,7 +13,8 @@
     "test": "node --test test/*.test.js",
     "selftest": "node src/selftest.js",
     "motortest": "node src/motortest.js",
-    "stoptest": "node src/stoptest.js"
+    "stoptest": "node src/stoptest.js",
+    "floodtest": "node src/floodtest.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"

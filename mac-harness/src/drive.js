@@ -65,18 +65,23 @@ poweredUP.on("discover", async (hub) => {
   // that issuing the command was enough.
   const driveDeg = drives.map(() => null);
   drives.forEach((d, i) => d.on("rotate", ({ degrees }) => { driveDeg[i] = degrees; }));
+  // Let the motor decelerate BEFORE judging it, otherwise the stopping
+  // transient reads as "still turning" - the mistake that sent an earlier
+  // round of this debugging down a blind alley.
   const verifyStopped = (i) => {
-    const before = driveDeg[i];
     setTimeout(() => {
-      const after = driveDeg[i];
-      if (before === null || after === null) return;
-      const moved = Math.abs(after - before);
-      log(
-        moved <= 2
-          ? `port ${DRIVE_PORTS[i]} CONFIRMED STOPPED (${moved} deg in 800ms)`
-          : `port ${DRIVE_PORTS[i]} STILL TURNING after brake (${moved} deg in 800ms)`
-      );
-    }, 800);
+      const before = driveDeg[i];
+      setTimeout(() => {
+        const after = driveDeg[i];
+        if (before === null || after === null) return;
+        const moved = Math.abs(after - before);
+        log(
+          moved <= 3
+            ? `port ${DRIVE_PORTS[i]} CONFIRMED STOPPED`
+            : `port ${DRIVE_PORTS[i]} STILL TURNING (${moved} deg/1.2s, 900ms after the stop)`
+        );
+      }, 1200);
+    }, 900);
   };
 
   // The HUD repaints with a carriage return, so a log line written without a
