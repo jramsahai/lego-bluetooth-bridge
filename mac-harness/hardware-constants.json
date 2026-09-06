@@ -4,6 +4,6 @@
   "driveInvert": [false, false],
   "steerInvert": false,
   "steerHalfRange": 105,
-  "verified": "ports and steerHalfRange measured 2026-09-05 against the real car; driveInvert and steerInvert NOT yet verified",
-  "notes": "Discovery found three TechnicLargeLinearMotors on A, B, D with C empty. D proven to be steering by end-stop sweep; A and B never stalled, so they are the drive pair. Steering span measured twice at 234 and 235 degrees (halfRange 105 and 106); the smaller is recorded here as the conservative value. The ESP32 re-measures halfRange itself on every connect, so this is reference only. driveInvert/steerInvert still require `npm run drive`."
+  "verified": "fully measured against the real car 2026-09-05",
+  "notes": "Three TechnicLargeLinearMotors on A, B, D; C empty. D proven to be steering by end-stop sweep; A and B never stall, so they are the drive pair. Steering span measured twice at 234 and 235 degrees (halfRange 105/106); 105 recorded as the conservative value, and the ESP32 re-measures it on every connect anyway. Scripted selftest confirmed both drive motors turn the same way uninverted, and that steer -100 points the wheels left. OPEN ISSUE: during that selftest the front wheels stopped turning partway through while the rear kept going - under investigation with `npm run motortest`."
 }

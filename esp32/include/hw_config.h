@@ -2,8 +2,7 @@
 #include <stdint.h>
 
 // ============================================================================
-// PORT ASSIGNMENTS: MEASURED against the real car on 2026-09-05.
-// MOTOR DIRECTIONS: STILL UNVERIFIED — see below.
+// PORTS AND MOTOR DIRECTIONS: ALL MEASURED against the real car 2026-09-05.
 //
 // Measured with mac-harness against a real LEGO Technic 42160 / Hub 88012:
 //   - Three TechnicLargeLinearMotors on ports A, B and D. Port C is empty.
@@ -14,16 +13,16 @@
 //     firmware re-measures this itself on every connect, so it is recorded in
 //     mac-harness/hardware-constants.json for reference rather than hardcoded.
 //
-// STILL UNVERIFIED: HW_DRIVE_INVERT and HW_STEER_INVERT below. Determining
-// them needs `npm run drive` against the car — press W and check both drive
-// wheels turn the SAME way, then press A and check the car steers LEFT.
-// Until that is done these two lines are guesses.
+// Motor directions VERIFIED 2026-09-05 by scripted selftest against the car:
+// commanded forward, both drive axles turned the same way, so neither drive
+// motor needs inverting. Commanded steer -100, the front wheels went left, so
+// the steering is not inverted either.
 // ============================================================================
 
 static const uint8_t HW_STEER_PORT = 3;              // "D" — measured
 static const uint8_t HW_DRIVE_PORTS[2] = { 0, 1 };   // "A", "B" — measured
-static const bool HW_DRIVE_INVERT[2] = { false, false };  // UNVERIFIED
-static const bool HW_STEER_INVERT = false;                // UNVERIFIED
+static const bool HW_DRIVE_INVERT[2] = { false, false };  // verified: both agree
+static const bool HW_STEER_INVERT = false;                // verified: -100 steers left
 
 // UART to the micro:bit. GPIO16/17 are free on WROOM; see the spec if you
 // substitute a WROVER, where PSRAM claims them.

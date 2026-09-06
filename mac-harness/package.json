@@ -11,7 +11,8 @@
     "calibrate": "node src/calibrate.js",
     "drive": "node src/drive.js",
     "test": "node --test test/*.test.js",
-    "selftest": "node src/selftest.js"
+    "selftest": "node src/selftest.js",
+    "motortest": "node src/motortest.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"

@@ -53,8 +53,20 @@ at -1, meaning run 1's zeroing at centre was accurate to a single degree.
 firmware re-measures this itself on every connect, so the number is reference
 only and is not compiled into the firmware.
 
-## Still unknown
+## Motor directions — CONFIRMED 2026-09-05
 
-- `driveInvert` — do A and B spin the same direction? Needs `npm run drive`,
-  press W, watch whether both drive wheels agree or fight each other.
-- `steerInvert` — does pressing A steer the car left? Needs the same run.
+Scripted selftest (`npm run selftest`) against the car:
+
+- Commanded both drive motors forward: **both axles turned the same direction**,
+  so `driveInvert` is `[false, false]` — neither motor needs inverting.
+- Commanded steer -100: **front wheels pointed left**. Commanded +100: right.
+  So `steerInvert` is `false`.
+
+## Open issue: front wheels stop early
+
+During the drive step of the selftest, the front wheels stopped turning partway
+through the 3-second run while the rear wheels kept going for the full duration.
+Being chased with `npm run motortest`, which runs each drive motor alone and
+logs whether the motor itself keeps rotating. That distinguishes a drivetrain
+slipping mechanically (motor turns, wheel does not) from a motor cutting out
+electrically (motor stops reporting rotation too).
