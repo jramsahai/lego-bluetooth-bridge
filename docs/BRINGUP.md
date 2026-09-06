@@ -33,7 +33,7 @@ touch the car.
   2.0). `platformio.ini` now pins `h2zero/NimBLE-Arduino@^1.4.2`, the line
   Legoino was written for. Every Legoino signature `main.cpp` uses was correct
   as written and needed no edit.
-- **The hardware constants are placeholders**, not measurements. See below.
+- **The hardware constants are measured** (`docs/hardware-map.md`). See below.
 - **`microbit/main.py` has only been syntax-checked.** It has never run on a
   micro:bit. `microbit/shaping.py` — the pure math it depends on — is
   genuinely well-tested (`test_shaping.py`, 14 cases, desktop pytest), but the
@@ -53,73 +53,32 @@ suites, and pass. It means the parts that *couldn't* be tested off hardware
 are completely unproven, and you should treat every claim below about "what
 happens on first power-up" as a prediction, not a report.
 
-## The hardware constants are unverified placeholders
+## The hardware constants are measured
 
-`esp32/include/hw_config.h` says so at the top of the file, in block
-comments, and it is correct:
+`esp32/include/hw_config.h` carries values measured against the real car on
+2026-09-05 and says so at the top of the file:
 
 ```
-HW_STEER_PORT       = 0     // "A"
-HW_DRIVE_PORTS[2]   = {1, 2}  // "B", "C"
-HW_DRIVE_INVERT[2]  = {false, true}
+HW_STEER_PORT       = 3            // "D"
+HW_DRIVE_PORTS[2]   = {0, 1}       // "A", "B"
+HW_DRIVE_INVERT[2]  = {false, false}
 HW_STEER_INVERT     = false
 ```
 
-These were transcribed from `mac-harness/hardware-constants.json`, which
-itself says `"verified": false` and explicitly labels itself as "the brief's
-example values, not measurements." **`steerHalfRange` (63, in that same JSON
-file) never made it into `hw_config.h` at all** — the firmware computes its
-own half-range at runtime from the physical calibration sweep
-(`computeSteerRange` in `esp32/lib/ctrl/control.cpp`), so there's no baked-in
-number to correct there, but the four constants above (which port is which,
-and which drive motor is mounted backwards) absolutely must be corrected
-before you trust the firmware to touch the real car — a wrong port number
-means the firmware will spin the wrong motor as "steering," which is the
-scenario the timeout-and-give-up logic exists to survive, not something
-you want to rely on in practice.
+How they were established, and the steering span (234-235 degrees, half-range
+105), is recorded in `docs/hardware-map.md`, with the matching values in
+`mac-harness/hardware-constants.json` (`"verified"` is a description of that
+measurement, not a flag). The firmware re-measures the steering range on
+every connect, so no half-range is compiled in.
 
-### How to get real values
-
-1. **`cd mac-harness && npm install`** (if not already done).
-2. **`npm run discover`** — car on a stand, wheels off the ground, hub green
-   button pressed. This connects over your Mac's own Bluetooth and prints the
-   device type attached to each of the hub's four ports. Two ports will share
-   a device class (the drive motors); one will be different (the steering
-   motor, a tacho/absolute motor). Write this down.
-3. **`STEER_PORT=<letter> npm run calibrate`** using the port you just
-   identified as steering. This sweeps it to both end stops, computes
-   `center`/`halfRange`, drives to center, and zeros the encoder there. Run it
-   twice; the two `halfRange` values should agree within a few degrees. If
-   they don't, or if it throws "sweep never stalled — wrong steering port?",
-   you picked the wrong port — go back to step 2.
-4. **`STEER_PORT=<letter> DRIVE_PORTS=<letter>,<letter> npm run drive`** —
-   keyboard-drive the car. Press `W`. Both drive wheels must turn the *same*
-   way. If they fight each other, one motor is mounted mirrored; re-run with
-   `DRIVE_INVERT=false,true` (or whichever combination makes `W` drive both
-   wheels forward together). Press `A`/`D` and confirm `A` steers left; if
-   it's backwards, note `steerInvert: true`.
-5. **Record the results** in two places:
-   - `docs/hardware-map.md` (does not exist yet — create it) with the literal
-     `discover` output and your reading of which port is which, following the
-     template already sketched in
-     `.superpowers/sdd/2026-09-05-microbit-lego-controller/task-1-brief.md`.
-   - `mac-harness/hardware-constants.json` — replace every field with your
-     measured values and flip `"verified"` to `true`.
-6. **Transcribe** the confirmed `steerPort`, `drivePorts`, `driveInvert`, and
-   `steerInvert` from `hardware-constants.json` into
-   `esp32/include/hw_config.h` (`HW_STEER_PORT`, `HW_DRIVE_PORTS`,
-   `HW_DRIVE_INVERT`, `HW_STEER_INVERT`), converting port letters to numbers
-   (A=0, B=1, C=2, D=3 — the mapping the header already documents). Update
-   the block comment at the top of the file once this is done so the next
-   reader doesn't have to re-derive that it's now real.
-
-Do not skip straight to flashing the ESP32 with the placeholder values "to
-see what happens" — a wrong `HW_STEER_PORT` means the calibration sweep spins
-whatever is actually attached to that port at power for up to 3 seconds per
-direction, twice, before giving up. On a drive motor or an unused port that's
-merely pointless; if the port map is subtly wrong in some other way it's a
-needless risk to the gearbox for no information you don't already get more
-safely from the harness.
+If the car is rebuilt or a motor is moved to another port, redo the
+measurement with the harness before flashing: `npm run discover` for the port
+map, `npm run calibrate` to prove which port stalls at end stops (the steering
+motor; a drive motor spins for the full timeout), `npm run selftest` for the
+directions, then update `hw_config.h`, `hardware-constants.json` and
+`docs/hardware-map.md` together. Do not flash with guessed values: a wrong
+`HW_STEER_PORT` sweeps whatever is on that port at power for up to three
+seconds in each direction.
 
 ## `microbit/main.py` has never run on a micro:bit
 
