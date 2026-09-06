@@ -164,7 +164,13 @@ static void stopEverything() {
     g_throttleNow = 0;
     if (g_alreadyStopped) return;
     for (int i = 0; i < 2; i++) {
-        myHub.stopBasicMotor(HW_DRIVE_PORTS[i]);
+        // stopTachoMotor, NOT stopBasicMotor. Legoino's stopBasicMotor is
+        // setBasicMotorSpeed(port, 0), which sends power 0 and lets the motor
+        // COAST — measured on the real car as 56 degrees of continued rotation
+        // after the command. stopTachoMotor routes through setTachoMotorSpeed
+        // with BrakingStyle::BRAKE and actually stops it. A failsafe that
+        // coasts is not a failsafe.
+        myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
         g_lastDriveCmd[i] = 0;
         g_haveDriveCmd[i] = true;
     }
@@ -196,7 +202,7 @@ void loop() {
             // hub reconnected mid-drive with a stale throttle still applied
             // on its side, stop it now rather than letting it run through
             // the settle delay and the calibration sweep.
-            for (int i = 0; i < 2; i++) myHub.stopBasicMotor(HW_DRIVE_PORTS[i]);
+            for (int i = 0; i < 2; i++) myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);  // brakes; see stopEverything()
         } else {
             Serial.println("[ble] connect failed, rescanning");
             myHub.init();

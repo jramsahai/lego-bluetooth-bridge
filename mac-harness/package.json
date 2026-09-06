@@ -12,7 +12,8 @@
     "drive": "node src/drive.js",
     "test": "node --test test/*.test.js",
     "selftest": "node src/selftest.js",
-    "motortest": "node src/motortest.js"
+    "motortest": "node src/motortest.js",
+    "stoptest": "node src/stoptest.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"

@@ -264,3 +264,35 @@ do something unexpected.
   `HW_STEER_PORT` against `docs/hardware-map.md` before retrying; burning
   through all 3 attempts on the same wrong port teaches you nothing new after
   the first.
+
+
+## Hardware finding: power 0 coasts, it does not stop
+
+Measured on the real car with `npm run stoptest`:
+
+```
+starting motor at power 40...
+  moving: 745 deg in 1500ms
+
+trying setPower(0) ...
+  still turning: 56 deg in 1500ms
+trying brake() ...
+  STOPPED (0 deg in 1500ms)  <=== THIS ONE WORKS
+```
+
+A TechnicLargeLinearMotor commanded to power 0 **coasts** — it keeps turning
+for a noticeable distance. Only an explicit brake stops it.
+
+This mattered in two places, both since fixed:
+
+- **The harness** (`drive.js`) used `setPower(0)` for zero throttle, so pressing
+  SPACE zeroed the display and centred the steering while the car kept rolling.
+  It now calls `brake()`.
+- **The firmware** used Legoino's `stopBasicMotor()` everywhere it stopped the
+  drive motors, including inside the 200 ms failsafe. That function is literally
+  `setBasicMotorSpeed(port, 0)`, so the failsafe would have let the car coast
+  rather than stopping it. It now calls `stopTachoMotor()`, which routes through
+  `setTachoMotorSpeed` with `BrakingStyle::BRAKE`.
+
+If you ever add a new stop path, use `stopTachoMotor` (firmware) or `brake()`
+(harness). Never power 0.
