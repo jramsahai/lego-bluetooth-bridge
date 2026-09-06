@@ -61,15 +61,29 @@ poweredUP.on("discover", async (hub) => {
   let lastSteerCmd = null;
   let lastPower = null;
 
+  const log = (msg) => {
+    if (process.env.QUIET === "1") return;
+    process.stdout.write(`\n[cmd] ${msg}`);
+  };
+
   const apply = () => {
     const power = toPower(throttle);
     if (power !== lastPower) {
       for (let i = 0; i < drives.length; i++) {
-        // brake() actively stops; setPower(0) can leave a motor coasting.
-        if (power === 0) drives[i].brake();
-        else drives[i].setPower(INVERT[i] ? -power : power);
+        // brake() actively stops; setPower(0) leaves the motor coasting -
+        // measured at 56 degrees of continued rotation on the real car.
+        if (power === 0) {
+          drives[i].brake();
+          log(`brake() -> port ${DRIVE_PORTS[i]}`);
+        } else {
+          const p = INVERT[i] ? -power : power;
+          drives[i].setPower(p);
+          log(`setPower(${p}) -> port ${DRIVE_PORTS[i]}`);
+        }
       }
       lastPower = power;
+    } else {
+      log(`throttle ${throttle} -> power ${power} UNCHANGED, nothing sent (lastPower=${lastPower})`);
     }
     // Only re-command the steering when the target actually moved. Sending
     // gotoAngle on every keypress makes the motor actively servo to hold a
@@ -78,6 +92,7 @@ poweredUP.on("discover", async (hub) => {
     const target = steerToPosition(s, halfRange);
     if (target !== lastSteerCmd) {
       steer.gotoAngle(target, 100);
+      log(`gotoAngle(${target}) -> port ${STEER_PORT}`);
       lastSteerCmd = target;
     }
   };
@@ -159,7 +174,14 @@ poweredUP.on("discover", async (hub) => {
       case "c": case "C":
         steerValue = 0; break;
       case " ":
-        throttle = 0; steerValue = 0; break;
+        // Hard stop. Deliberately bypasses the change-gate and brakes every
+        // drive motor directly, so a stale cache can never swallow a stop.
+        throttle = 0;
+        steerValue = 0;
+        for (let i = 0; i < drives.length; i++) drives[i].brake();
+        lastPower = 0;
+        log("SPACE: direct brake() on all drive motors");
+        break;
       default:
         return;
     }
