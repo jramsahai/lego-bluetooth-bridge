@@ -206,3 +206,8 @@ is deliberate: it means powering everything up while sitting on a table, or a
 brief signal dropout mid-drive, can never make the car move on its own. Press
 button A once (after the status icon shows `READY_DISARMED`, not before) to
 arm it and start driving.
+  Any tilt past the deadzone drives the motors at no less than
+  `DRIVE_MIN_POWER` (25%, `esp32/include/hw_config.h`): below that a geared
+  LEGO motor stalls against its own gearing and whines instead of turning,
+  so throttle maps onto the 25..100 band rather than 0..100. Level is still
+  exactly zero.

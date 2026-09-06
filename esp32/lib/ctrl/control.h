@@ -18,6 +18,14 @@ int32_t steerToPosition(int steer, int32_t halfRange);
 // Moves `current` at most `maxDelta` toward `target`, without overshooting.
 int slewLimit(int current, int target, int maxDelta);
 
+// Throttle -100..100 -> drive motor power. A geared LEGO motor will not
+// sustain rotation at a low duty cycle: it kicks, stalls against its own
+// gearing and whines, so any non-zero throttle maps onto minPower..maxPower
+// (sign preserved) and only zero stays zero. Apply AFTER slewLimit, which
+// works on the throttle scale, so a ramp never dwells in the whine band.
+// Mirror of mac-harness/src/drive.js toPower.
+int throttleToPower(int throttle, int minPower, int maxPower);
+
 struct StallDetector {
     static const size_t CAP = 16;
     uint32_t t[CAP];

@@ -42,6 +42,12 @@ static const int32_t STALL_THRESHOLD_DEG = 2;
 static const int STEER_SPEED = 100;
 static const uint8_t STEER_MAX_POWER = 100;
 static const int THROTTLE_SLEW_PER_TICK = 4;   // per 20 ms tick
+// Drive motor power band. Below DRIVE_MIN_POWER these motors do not turn,
+// they stall against their gearing and whine (mac-harness/src/drive.js
+// MIN_POWER, measured with motortest: they run happily at 40). Non-zero
+// throttle maps onto DRIVE_MIN_POWER..DRIVE_MAX_POWER; zero stays zero.
+static const int DRIVE_MIN_POWER = 25;
+static const int DRIVE_MAX_POWER = 100;
 
 // Failsafe and status.
 static const uint32_t FRAME_TIMEOUT_MS = 200;

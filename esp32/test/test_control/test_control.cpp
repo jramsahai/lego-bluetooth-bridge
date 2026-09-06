@@ -70,6 +70,31 @@ void test_stall_detector_resets_cleanly_between_sweeps(void) {
     TEST_ASSERT_FALSE(stallPush(&d, 200, 100));   // history was cleared
 }
 
+// A geared LEGO motor will not sustain rotation at a low duty cycle: it
+// kicks, stalls, and whines. Mirror of mac-harness/src/drive.js toPower.
+void test_throttle_to_power_maps_onto_the_floor_to_ceiling_band(void) {
+    TEST_ASSERT_EQUAL_INT(26, throttleToPower(1, 25, 100));    // first step already moves
+    TEST_ASSERT_EQUAL_INT(63, throttleToPower(50, 25, 100));
+    TEST_ASSERT_EQUAL_INT(100, throttleToPower(100, 25, 100));
+    TEST_ASSERT_EQUAL_INT(-26, throttleToPower(-1, 25, 100));
+    TEST_ASSERT_EQUAL_INT(-100, throttleToPower(-100, 25, 100));
+}
+
+void test_throttle_to_power_keeps_zero_at_zero(void) {
+    // The floor must never turn "hands off" into a creep.
+    TEST_ASSERT_EQUAL_INT(0, throttleToPower(0, 25, 100));
+}
+
+void test_throttle_to_power_honours_a_lower_ceiling(void) {
+    TEST_ASSERT_EQUAL_INT(70, throttleToPower(100, 25, 70));
+    TEST_ASSERT_EQUAL_INT(48, throttleToPower(50, 25, 70));
+}
+
+void test_throttle_to_power_clamps_out_of_range_input(void) {
+    TEST_ASSERT_EQUAL_INT(100, throttleToPower(150, 25, 100));
+    TEST_ASSERT_EQUAL_INT(-100, throttleToPower(-150, 25, 100));
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     UNITY_BEGIN();
@@ -83,5 +108,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_stall_detector_reports_stall_after_a_full_quiet_window);
     RUN_TEST(test_stall_detector_stays_quiet_while_still_turning);
     RUN_TEST(test_stall_detector_resets_cleanly_between_sweeps);
+    RUN_TEST(test_throttle_to_power_maps_onto_the_floor_to_ceiling_band);
+    RUN_TEST(test_throttle_to_power_keeps_zero_at_zero);
+    RUN_TEST(test_throttle_to_power_honours_a_lower_ceiling);
+    RUN_TEST(test_throttle_to_power_clamps_out_of_range_input);
     return UNITY_END();
 }

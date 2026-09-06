@@ -24,6 +24,17 @@ int slewLimit(int current, int target, int maxDelta) {
     return current + delta;
 }
 
+int throttleToPower(int throttle, int minPower, int maxPower) {
+    if (throttle == 0) return 0;
+    if (throttle > 100) throttle = 100;
+    if (throttle < -100) throttle = -100;
+    int mag = throttle < 0 ? -throttle : throttle;
+    double power = (double)minPower + ((double)(maxPower - minPower) * mag) / 100.0;
+    if (power > 100.0) power = 100.0;
+    int p = (int)lround(power);
+    return throttle < 0 ? -p : p;
+}
+
 void stallReset(StallDetector *d, uint32_t windowMs, int32_t thresholdDeg) {
     d->count = 0;
     d->head = 0;

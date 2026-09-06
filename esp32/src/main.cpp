@@ -185,6 +185,9 @@ static void applyControl(int steer, int throttle) {
     bool wroteDrive = false;
     for (int i = 0; i < 2; i++) {
         int p = HW_DRIVE_INVERT[i] ? -throttle : throttle;
+    // Slew-limited throttle -> real power: lift anything non-zero onto the
+    // band the motors actually turn in (see DRIVE_MIN_POWER).
+    int power = throttleToPower(throttle, DRIVE_MIN_POWER, DRIVE_MAX_POWER);
         if (!g_haveDriveCmd[i] || p != g_lastDriveCmd[i]) {
             if (wroteDrive) delay(30);
             startPower(HW_DRIVE_PORTS[i], p);
