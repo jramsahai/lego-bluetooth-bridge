@@ -233,3 +233,11 @@ is deliberate: it means powering everything up while sitting on a table, or a
 brief signal dropout mid-drive, can never make the car move on its own. Press
 button A once (after the status icon shows `READY_DISARMED`, not before) to
 arm it and start driving.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
+
+LEGO, Technic, and CONTROL+ are trademarks of the LEGO Group; Audi and RS Q
+e-tron are trademarks of Audi AG. This project is an independent, unofficial
+BLE client and is not affiliated with or endorsed by either company.

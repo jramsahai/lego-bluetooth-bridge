@@ -6,3 +6,9 @@ node_modules/
 .venv/
 esp32/.pio/
 __pycache__/
+.pytest_cache/
+
+# AI-assisted-development scratch: planning transcripts and session state,
+# not project documentation.
+.superpowers/
+docs/superpowers/
