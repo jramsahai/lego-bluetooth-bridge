@@ -76,3 +76,29 @@ test("a write whose acknowledgement never comes still settles, so awaiting canno
   await m.brake();
   assert.ok(Date.now() - t < 1000, "settled by the ack timeout");
 });
+
+test("setSpeed writes a proper LWP3 StartSpeed (0x07) with profile bits", () => {
+  const { hub, m } = setup(3);
+  m.setSpeed(30, { maxPower: 50 });
+  // 0x07, speed 30, maxPower 50, profile 0x03
+  assert.equal(hex(hub.writes[0]), "810311" + "07" + "1e" + "32" + "03");
+});
+
+test("legoinoTachoSpeed reproduces Legoino's setTachoMotorSpeed bytes exactly, including sub-command 0x01", () => {
+  const { hub, m } = setup(3);
+  m.legoinoTachoSpeed(30, { maxPower: 50 });
+  // Legoino: {0x81, port, 0x11, 0x01, MapSpeed(speed), maxPower, brakingStyle, 0x03}
+  assert.equal(hex(hub.writes[0]), "810311" + "01" + "1e" + "32" + "7f" + "03");
+});
+
+test("legoinoStopTacho reproduces Legoino's stopTachoMotor bytes exactly", () => {
+  const { hub, m } = setup(0);
+  m.legoinoStopTacho();
+  assert.equal(hex(hub.writes[0]), "810011" + "01" + "00" + "64" + "7f" + "03");
+});
+
+test("legoinoTachoSpeed encodes negative speed as two's complement like the rest of the API", () => {
+  const { hub, m } = setup(3);
+  m.legoinoTachoSpeed(-30, { maxPower: 50 });
+  assert.equal(hex(hub.writes[0]), "810311" + "01" + "e2" + "32" + "7f" + "03");
+});

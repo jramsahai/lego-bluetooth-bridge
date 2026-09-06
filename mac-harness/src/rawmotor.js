@@ -54,6 +54,25 @@ export function rawMotor(device) {
     brake() { return this.setPower(Consts.BrakingStyle.BRAKE); },
     stop() { return this.setPower(0); },
 
+    /** StartSpeed (0x07): speed-regulated, the LWP3 command Legoino's setTachoMotorSpeed was presumably meant to send. */
+    setSpeed(speed, { maxPower = 100 } = {}) {
+      return portOutput([0x07, clampSpeed(speed) & 0xff, maxPower, 0x03]);
+    },
+
+    /**
+     * Byte-for-byte what Legoino's setTachoMotorSpeed sends from the ESP32:
+     *   {0x81, port, 0x11, 0x01, MapSpeed(speed), maxPower, brakingStyle, 0x03}
+     * Sub-command 0x01 is StartPower(Power) in LWP3, which takes ONE byte; the
+     * three trailing bytes are not part of that command. This exists so the
+     * harness can find out what the hub does with it before the firmware
+     * relies on it. Not for driving.
+     */
+    legoinoTachoSpeed(speed, { maxPower = 100, brakeStyle = Consts.BrakingStyle.BRAKE } = {}) {
+      return portOutput([0x01, clampSpeed(speed) & 0xff, maxPower, brakeStyle, 0x03]);
+    },
+    /** Byte-for-byte what Legoino's stopTachoMotor sends: setTachoMotorSpeed(port, 0). */
+    legoinoStopTacho() { return this.legoinoTachoSpeed(0); },
+
     /** GotoAbsolutePosition. Matches node-poweredup's defaults: max power 100, BRAKE, accel+decel profile. */
     gotoAngle(angle, speed = 100, { maxPower = 100, brakeStyle = Consts.BrakingStyle.BRAKE } = {}) {
       const msg = Buffer.from([0x0d, 0, 0, 0, 0, clampSpeed(speed) & 0xff, maxPower, brakeStyle, 0x03]);
