@@ -61,9 +61,31 @@ poweredUP.on("discover", async (hub) => {
   let lastSteerCmd = null;
   let lastPower = null;
 
+  // Objective check that a brake actually took effect, rather than trusting
+  // that issuing the command was enough.
+  const driveDeg = drives.map(() => null);
+  drives.forEach((d, i) => d.on("rotate", ({ degrees }) => { driveDeg[i] = degrees; }));
+  const verifyStopped = (i) => {
+    const before = driveDeg[i];
+    setTimeout(() => {
+      const after = driveDeg[i];
+      if (before === null || after === null) return;
+      const moved = Math.abs(after - before);
+      log(
+        moved <= 2
+          ? `port ${DRIVE_PORTS[i]} CONFIRMED STOPPED (${moved} deg in 800ms)`
+          : `port ${DRIVE_PORTS[i]} STILL TURNING after brake (${moved} deg in 800ms)`
+      );
+    }, 800);
+  };
+
+  // The HUD repaints with a carriage return, so a log line written without a
+  // trailing newline gets overwritten by the next HUD frame - which made it
+  // look as though commands to the second drive motor were never sent.
+  // Clear the current line, emit a complete line, and let the HUD repaint.
   const log = (msg) => {
     if (process.env.QUIET === "1") return;
-    process.stdout.write(`\n[cmd] ${msg}`);
+    process.stdout.write(`\r\x1b[K[cmd] ${msg}\n`);
   };
 
   const apply = () => {
@@ -75,6 +97,7 @@ poweredUP.on("discover", async (hub) => {
         if (power === 0) {
           drives[i].brake();
           log(`brake() -> port ${DRIVE_PORTS[i]}`);
+          verifyStopped(i);
         } else {
           const p = INVERT[i] ? -power : power;
           drives[i].setPower(p);
