@@ -21,7 +21,8 @@
     "secondcmd": "node src/secondcmdtest.js",
     "calibbisect": "node src/calibbisect.js",
     "steerb": "node src/steerbtest.js",
-    "trace": "node src/tracetest.js"
+    "trace": "node src/tracetest.js",
+    "firmwarecmds": "node src/firmwarecmds.js"
   },
   "dependencies": {
     "node-poweredup": "^10.1.0"
