@@ -65,7 +65,9 @@ poweredUP.on("discover", async (hub) => {
     const power = toPower(throttle);
     if (power !== lastPower) {
       for (let i = 0; i < drives.length; i++) {
-        drives[i].setPower(INVERT[i] ? -power : power);
+        // brake() actively stops; setPower(0) can leave a motor coasting.
+        if (power === 0) drives[i].brake();
+        else drives[i].setPower(INVERT[i] ? -power : power);
       }
       lastPower = power;
     }
@@ -125,7 +127,24 @@ poweredUP.on("discover", async (hub) => {
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
+  // A crash here would leave the car driving away, so every failure path
+  // stops the motors first and says what happened.
+  const panic = (label) => (err) => {
+    try { for (const d of drives) d.brake(); } catch (_) {}
+    process.stdout.write(`\n\n!! ${label}: ${err && err.message ? err.message : err}\n`);
+    process.stdout.write("!! motors braked. If the car is still moving, hold the hub button.\n");
+    process.exit(1);
+  };
+  process.on("uncaughtException", panic("uncaught exception"));
+  process.on("unhandledRejection", panic("unhandled rejection"));
+  hub.on("disconnect", () => {
+    process.stdout.write("\n\n!! hub disconnected - the car may keep its last command.\n");
+    process.stdout.write("!! hold the hub button to power it off.\n");
+    process.exit(1);
+  });
+
   process.stdin.on("data", async (key) => {
+   try {
     if (key === "q" || key === "Q" || key === CTRL_C) return quit();
 
     switch (key) {
@@ -146,6 +165,9 @@ poweredUP.on("discover", async (hub) => {
     }
     apply();
     hud();
+   } catch (err) {
+    panic("key handler failed")(err);
+   }
   });
   hud();
 });
