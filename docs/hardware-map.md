@@ -62,11 +62,45 @@ Scripted selftest (`npm run selftest`) against the car:
 - Commanded steer -100: **front wheels pointed left**. Commanded +100: right.
   So `steerInvert` is `false`.
 
-## Open issue: front wheels stop early
+## Axle assignment
 
-During the drive step of the selftest, the front wheels stopped turning partway
-through the 3-second run while the rear wheels kept going for the full duration.
-Being chased with `npm run motortest`, which runs each drive motor alone and
-logs whether the motor itself keeps rotating. That distinguishes a drivetrain
-slipping mechanically (motor turns, wheel does not) from a motor cutting out
-electrically (motor stops reporting rotation too).
+- **Port A drives the REAR wheels.**
+- **Port B drives the FRONT wheels.**
+- Port D steers.
+
+## Resolved: front-left wheel binding (mechanical, not electrical)
+
+During the selftest the front wheels appeared to stop while the rear kept
+running. Running both drive motors together with per-motor logging showed both
+motors turning continuously and at almost identical rates for the full 6
+seconds:
+
+```
+TOTALS: A=3125 deg (122 events)  B=3010 deg (121 events)
+```
+
+So the front motor never stalled or cut out. Observation on the car: the front
+LEFT wheel was not spinning while the front RIGHT was. That is a differential
+working as designed — hold one wheel and it routes all the torque to the other.
+
+**Conclusion: the front-left wheel is binding mechanically** (a rubbing tire or
+a pinched hub), and the differential is faithfully sending the drive to the free
+side. Nothing in the firmware or harness is implicated.
+
+Worth fixing before serious driving, since the car will be down on traction and
+will scrub that tire, but it does not block any of the software.
+
+Checks: spin the front-left by hand with power off; look for the tire fouling
+bodywork or a suspension arm; confirm the hub is not pinched against the
+upright; and confirm the steering really is centred, since the calibration
+centres on the midpoint of the motor's travel, which is only true straight-ahead
+if the linkage is symmetric.
+
+## Diagnostics available
+
+- `npm run discover` — list what is on each port
+- `npm run calibrate` — measure the steering end stops
+- `npm run selftest` — scripted direction check, no keyboard needed
+- `npm run motortest` — each drive motor alone, with rotation logging
+- `BOTH=1 npm run motortest` — both drive motors together, logged separately
+- `npm run drive` — interactive keyboard driving (needs a real TTY)
