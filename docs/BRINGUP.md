@@ -19,24 +19,20 @@ touch the car.
 
 ## What "finished but unproven" actually means here
 
-- **`esp32/` has never been compiled for the target.** The `native`
-  PlatformIO environment — pure C++ logic with no `Arduino.h`, no BLE, no
-  Legoino — builds and passes (`pio test -e native`, 21 test cases). The
-  `esp32dev` environment, which is the actual firmware (`esp32/src/main.cpp`,
-  which includes `Arduino.h` and `Lpf2Hub.h`), has never been built. There is
-  no ESP32 board and no LEGO car in the environment this was written in.
-  `platformio.ini` names `corneliusmunz/Legoino` as a dependency but it has
-  never actually been fetched or linked — `.pio/libdeps/` on this machine
-  contains only the native test environment's `Unity` framework, nothing for
-  `esp32dev`. That means **every Legoino API call in `main.cpp`** —
-  `setTachoMotorSpeed`, `stopTachoMotor`, `setAbsoluteMotorPosition`,
-  `setAbsoluteMotorEncoderPosition`, `activatePortDevice`, `parseTachoMotor`,
-  `connectHub`, `isConnecting`/`isConnected`, `getDeviceTypeForPortNumber` — is
-  unverified against the real library. The code was written by reading
-  Legoino's documented API; it has not been checked against the library's
-  actual headers, and PlatformIO has never had the chance to reject a
-  misremembered signature because it has never tried to compile that
-  environment.
+- **`esp32/` compiles for the target (first built 2026-09-05, Legoino 1.1.0),
+  but has never run on a board.** `pio run -e esp32dev` succeeds, so every
+  Legoino call in `esp32/src/main.cpp` matches the library's real headers.
+  The `native` environment (pure C++ logic, 21 test cases) also passes. There
+  is still no ESP32 board and no observation of the firmware on hardware.
+
+  Getting that first build to pass needed one change, and it was not in
+  `main.cpp`: Legoino 1.1.0 declares `depends=NimBLE-Arduino` with no version
+  bound, so PlatformIO resolved NimBLE-Arduino 2.5.1 and Legoino itself failed
+  to compile against it (`getClientListSize`, `setScanResponse`, `setPower`
+  and the `NimBLEAddress`/`addData` string overloads all changed in NimBLE
+  2.0). `platformio.ini` now pins `h2zero/NimBLE-Arduino@^1.4.2`, the line
+  Legoino was written for. Every Legoino signature `main.cpp` uses was correct
+  as written and needed no edit.
 - **The hardware constants are placeholders**, not measurements. See below.
 - **`microbit/main.py` has only been syntax-checked.** It has never run on a
   micro:bit. `microbit/shaping.py` — the pure math it depends on — is
