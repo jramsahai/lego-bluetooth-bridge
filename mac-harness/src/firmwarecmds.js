@@ -3,8 +3,11 @@
 // before trusting the firmware: the harness validated StartPower, brake (127),
 // GotoAbsolutePosition and PresetEncoder, but the firmware ALSO uses Legoino's
 // setTachoMotorSpeed / stopTachoMotor, whose sub-command 0x01 is a one-byte
-// StartPower in LWP3 with three unexpected trailing bytes. Nobody knows what
-// the hub does with that, and the firmware's failsafe stop depends on it.
+// StartPower in LWP3 with three unexpected trailing bytes, and whose speed
+// byte is Legoino's MapSpeed rescaling (0 -> 127, 100 -> 126) rather than the
+// int8 the harness sends. Nobody knows what the hub does with that, and the
+// firmware's failsafe stop depended on it until esp32/lib/ctrl/lwp3 replaced
+// every Legoino motor helper with bytes pinned to this harness's test vectors.
 //
 // Car on a stand, wheels off the ground. Power-cycle the hub first.
 import { PoweredUP } from "node-poweredup";

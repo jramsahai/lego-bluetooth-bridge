@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { rawMotor } from "../src/rawmotor.js";
+import { rawMotor, legoinoMapSpeed } from "../src/rawmotor.js";
 
 class FakeHub extends EventEmitter {
   constructor() { super(); this.writes = []; this.uuids = []; }
@@ -84,21 +84,31 @@ test("setSpeed writes a proper LWP3 StartSpeed (0x07) with profile bits", () => 
   assert.equal(hex(hub.writes[0]), "810311" + "07" + "1e" + "32" + "03");
 });
 
-test("legoinoTachoSpeed reproduces Legoino's setTachoMotorSpeed bytes exactly, including sub-command 0x01", () => {
+test("legoinoMapSpeed matches LegoinoCommon::MapSpeed, including Arduino map()'s truncating division", () => {
+  assert.equal(legoinoMapSpeed(0), 127);      // Legoino's "stop" is the brake sentinel
+  assert.equal(legoinoMapSpeed(30), 37);      // 30 * 126 / 100 = 37.8 -> 37
+  assert.equal(legoinoMapSpeed(100), 126);
+  assert.equal(legoinoMapSpeed(1), 1);
+  assert.equal(legoinoMapSpeed(-30), 217);    // 255 + trunc(30 * -127 / 100) = 255 - 38
+  assert.equal(legoinoMapSpeed(-100), 128);
+  assert.equal(legoinoMapSpeed(-1), 254);     // 255 + trunc(-1.27) = 254
+});
+
+test("legoinoTachoSpeed sends Legoino's setTachoMotorSpeed bytes exactly, MapSpeed included", () => {
   const { hub, m } = setup(3);
   m.legoinoTachoSpeed(30, { maxPower: 50 });
-  // Legoino: {0x81, port, 0x11, 0x01, MapSpeed(speed), maxPower, brakingStyle, 0x03}
-  assert.equal(hex(hub.writes[0]), "810311" + "01" + "1e" + "32" + "7f" + "03");
+  // Legoino: {0x81, port, 0x11, 0x01, MapSpeed(30)=37, maxPower, brakingStyle, 0x03}
+  assert.equal(hex(hub.writes[0]), "810311" + "01" + "25" + "32" + "7f" + "03");
 });
 
-test("legoinoStopTacho reproduces Legoino's stopTachoMotor bytes exactly", () => {
+test("legoinoStopTacho sends Legoino's stopTachoMotor bytes exactly: MapSpeed(0) is 127", () => {
   const { hub, m } = setup(0);
   m.legoinoStopTacho();
-  assert.equal(hex(hub.writes[0]), "810011" + "01" + "00" + "64" + "7f" + "03");
+  assert.equal(hex(hub.writes[0]), "810011" + "01" + "7f" + "64" + "7f" + "03");
 });
 
-test("legoinoTachoSpeed encodes negative speed as two's complement like the rest of the API", () => {
+test("legoinoTachoSpeed maps negative speed onto 128..255 like Legoino, not two's complement", () => {
   const { hub, m } = setup(3);
   m.legoinoTachoSpeed(-30, { maxPower: 50 });
-  assert.equal(hex(hub.writes[0]), "810311" + "01" + "e2" + "32" + "7f" + "03");
+  assert.equal(hex(hub.writes[0]), "810311" + "01" + "d9" + "32" + "7f" + "03");   // 217
 });

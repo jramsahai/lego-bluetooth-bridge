@@ -28,6 +28,17 @@ const ACK_TIMEOUT_MS = 300;
 
 const clampSpeed = (s) => (s === 127 ? 127 : Math.max(-100, Math.min(100, Math.round(s))));
 
+// LegoinoCommon::MapSpeed from Legoino 1.1.0, including Arduino map()'s
+// truncating integer division. Legoino runs every speed argument through
+// this before it reaches the wire, so 0 becomes 127 (the brake sentinel),
+// 1..100 becomes 1..126, and -1..-100 becomes 254..128. Only used to
+// reproduce Legoino's bytes for firmwarecmds; rawMotor itself never scales.
+export function legoinoMapSpeed(speed) {
+  if (speed === 0) return 127;
+  if (speed > 0) return Math.trunc((Math.min(speed, 100) * 126) / 100);
+  return 255 + Math.trunc((Math.min(-speed, 100) * -127) / 100);
+}
+
 export function rawMotor(device) {
   const hub = device.hub;
   const portId = device.portId;
@@ -62,13 +73,15 @@ export function rawMotor(device) {
     /**
      * Byte-for-byte what Legoino's setTachoMotorSpeed sends from the ESP32:
      *   {0x81, port, 0x11, 0x01, MapSpeed(speed), maxPower, brakingStyle, 0x03}
-     * Sub-command 0x01 is StartPower(Power) in LWP3, which takes ONE byte; the
-     * three trailing bytes are not part of that command. This exists so the
-     * harness can find out what the hub does with it before the firmware
-     * relies on it. Not for driving.
+     * MapSpeed is Legoino's own rescaling, not the int8 the rest of this module
+     * sends: 0 -> 127, 1..100 -> 1..126, -1..-100 -> 254..128 (see
+     * legoinoMapSpeed above). Sub-command 0x01 is StartPower(Power) in LWP3,
+     * which takes ONE byte; the three trailing bytes are not part of that
+     * command. This exists so the harness can find out what the hub does with
+     * it before the firmware relies on it. Not for driving.
      */
     legoinoTachoSpeed(speed, { maxPower = 100, brakeStyle = Consts.BrakingStyle.BRAKE } = {}) {
-      return portOutput([0x01, clampSpeed(speed) & 0xff, maxPower, brakeStyle, 0x03]);
+      return portOutput([0x01, legoinoMapSpeed(speed), maxPower, brakeStyle, 0x03]);
     },
     /** Byte-for-byte what Legoino's stopTachoMotor sends: setTachoMotorSpeed(port, 0). */
     legoinoStopTacho() { return this.legoinoTachoSpeed(0); },
