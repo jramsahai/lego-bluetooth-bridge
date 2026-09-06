@@ -6,6 +6,26 @@
 
 Lpf2Hub myHub;
 
+// The two motor commands the Mac harness has proven on the car
+// (docs/OPEN-ISSUE-port-a.md): StartPower via WriteDirectModeData mode 0
+// (Legoino's setBasicMotorSpeed) and the same command with value 127, which
+// the hub treats as brake. Legoino's stopTachoMotor / setTachoMotorSpeed
+// send sub-command 0x01 with trailing bytes that are not part of that LWP3
+// command; what the hub does with them is unmeasured, so the firmware does
+// not use them.
+static void startPower(uint8_t port, int power) {
+    myHub.setBasicMotorSpeed(port, power);
+}
+
+// Written as raw bytes rather than setBasicMotorSpeed(port, 127), because
+// Legoino scales its argument through MapSpeed, which maps 0..100 onto
+// 0..126 -- MapSpeed(127) is 160, i.e. int8 -96, nearly full reverse. The
+// brake value 127 has to reach the wire unscaled.
+static void brakeMotor(uint8_t port) {
+    byte cmd[6] = {0x81, port, 0x11, 0x51, 0x00, 0x7F};   // StartPower 127 = brake
+    myHub.WriteValue(cmd, 6);
+}
+
 static volatile int32_t g_steerPos = 0;
 static SteerRange g_range = { 0, 0 };
 static bool g_calibrated = false;
@@ -60,7 +80,7 @@ static bool sweepToStop(int speed, int32_t *stopPos) {
     StallDetector d;
     stallReset(&d, STALL_WINDOW_MS, STALL_THRESHOLD_DEG);
     uint32_t t0 = millis();
-    myHub.setTachoMotorSpeed(HW_STEER_PORT, speed, SWEEP_MAX_POWER);
+    startPower(HW_STEER_PORT, speed);   // raw power, as the harness sweep does
 
     while (millis() - t0 < SWEEP_TIMEOUT_MS) {
         delay(20);
@@ -73,13 +93,13 @@ static bool sweepToStop(int speed, int32_t *stopPos) {
         // this dead time — 300 ms + the 150 ms window still leaves large
         // headroom under the 3000 ms timeout.
         if (stalled && millis() - t0 >= 300) {
-            myHub.stopTachoMotor(HW_STEER_PORT);
+            brakeMotor(HW_STEER_PORT);
             *stopPos = g_steerPos;
             delay(300);                    // settle before reversing
             return true;
         }
     }
-    myHub.stopTachoMotor(HW_STEER_PORT);
+    brakeMotor(HW_STEER_PORT);
     Serial.printf("[calib] TIMEOUT at speed %d after %ums — wrong port?\n",
                   speed, SWEEP_TIMEOUT_MS);
     return false;
@@ -88,9 +108,9 @@ static bool sweepToStop(int speed, int32_t *stopPos) {
 bool calibrateSteering() {
     Serial.println("[calib] sweeping for end stops...");
     int32_t stopA = 0, stopB = 0;
-    if (!sweepToStop(SWEEP_SPEED, &stopA)) return false;
+    if (!sweepToStop(SWEEP_POWER, &stopA)) return false;
     Serial.printf("[calib] stop 1 at %d\n", (int)stopA);
-    if (!sweepToStop(-SWEEP_SPEED, &stopB)) return false;
+    if (!sweepToStop(-SWEEP_POWER, &stopB)) return false;
     Serial.printf("[calib] stop 2 at %d\n", (int)stopB);
 
     int32_t lo = stopA < stopB ? stopA : stopB;
@@ -178,14 +198,12 @@ static void stopEverything() {
     // sending twice. A few milliseconds is nothing against the 200 ms
     // failsafe budget.
     //
-    // stopTachoMotor, NOT stopBasicMotor: Legoino's stopBasicMotor is
-    // setBasicMotorSpeed(port, 0), a raw power value with no braking style,
-    // while stopTachoMotor routes through setTachoMotorSpeed with
-    // BrakingStyle::BRAKE. Tacho is also the correct API family for these
-    // encoder motors. (Power 0 does stop them too, just less sharply.)
+    // brakeMotor sends StartPower 127, the brake the harness verified stops
+    // these motors on the car. Legoino's stopTachoMotor is not used: its
+    // bytes are not a valid LWP3 command (see brakeMotor).
     for (int pass = 0; pass < 2; pass++) {
         for (int i = 0; i < 2; i++) {
-            myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
+            brakeMotor(HW_DRIVE_PORTS[i]);
             delay(30);   // do not let the next write race this one
         }
     }
@@ -223,7 +241,7 @@ void loop() {
             // the settle delay and the calibration sweep.
             // Spaced apart, as everywhere else (see stopEverything).
             for (int i = 0; i < 2; i++) {
-                myHub.stopTachoMotor(HW_DRIVE_PORTS[i]);
+                brakeMotor(HW_DRIVE_PORTS[i]);
                 delay(30);
             }
         } else {

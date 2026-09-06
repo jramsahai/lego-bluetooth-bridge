@@ -31,8 +31,12 @@ static const int PIN_UART_TX = 17;   // -> micro:bit P1
 static const uint32_t UART_BAUD = 115200;
 
 // Calibration (spec values).
-static const int SWEEP_SPEED = 30;
-static const uint8_t SWEEP_MAX_POWER = 50;
+// Raw StartPower for the calibration sweep, the same value and command the
+// Mac harness sweep uses (mac-harness/src/drive.js SWEEP_POWER). Note that
+// Legoino's setBasicMotorSpeed rescales its argument through MapSpeed
+// (0..100 -> 0..126), so 30 leaves the ESP32 as 37 on the wire: a little
+// brisker than the harness sweep, which stall detection absorbs.
+static const int SWEEP_POWER = 30;
 static const uint32_t SWEEP_TIMEOUT_MS = 3000;
 static const uint32_t STALL_WINDOW_MS = 150;
 static const int32_t STALL_THRESHOLD_DEG = 2;

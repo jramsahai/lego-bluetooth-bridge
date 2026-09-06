@@ -303,13 +303,22 @@ judging it, or you measure the transient instead of the outcome.
 
 ### What this means for the firmware
 
-The firmware still uses `stopTachoMotor` rather than `stopBasicMotor`, and that
-change stands - but on different grounds than originally claimed. It rests on
-reading Legoino's source, not on the flawed measurement: `stopBasicMotor` is
-`setBasicMotorSpeed(port, 0)`, which sends a raw power value with no braking
-style, while `stopTachoMotor` routes through `setTachoMotorSpeed` with
-`BrakingStyle::BRAKE`. These are tacho motors with encoders, so the tacho
-command is the right API family for them either way.
+The firmware's stop is `brakeMotor()` in `esp32/src/main.cpp`: StartPower with
+value 127, the same bytes `brake()` sends from the Mac harness and the one
+stop that has been measured on the car. It does **not** use Legoino's
+`stopTachoMotor`. That function sends sub-command `0x01` followed by
+max-power, brake-style and profile bytes; in LWP3, `0x01` is a one-byte
+StartPower, so those trailing bytes are not part of any command and the hub's
+response to them is unmeasured. `npm run firmwarecmds` in the harness sends
+those exact bytes to find out, for the record, but the firmware no longer
+depends on the answer. The calibration sweep likewise uses raw StartPower at
+30, as the harness sweep does, instead of `setTachoMotorSpeed`.
+
+`brakeMotor()` writes the six bytes itself rather than calling
+`setBasicMotorSpeed(port, 127)`, because Legoino rescales its speed argument
+through `MapSpeed`, which maps 0..100 onto 0..126: `MapSpeed(127)` is 160,
+which as an int8 is -96 — nearly full reverse, not a brake. The same rescaling
+means the sweep's `SWEEP_POWER = 30` reaches the hub as 37.
 
 
 ## Hardware finding: "consecutive motor commands race" was a Mac library bug
