@@ -328,9 +328,15 @@ silently lost. Nothing reports an error; the command simply never takes effect.
 
 ### The rule
 
-**Never issue two motor commands back to back.** In the harness, `await` each
-one. In the firmware, put a short delay between them - `delay(15)` is ample and
-costs nothing against the 200 ms failsafe budget.
+**Never issue two motor commands back to back.** Separate them in time: 20 ms
+in the harness, `delay(15)` in the firmware. Either is ample and costs nothing
+against the 200 ms failsafe budget.
+
+**Do NOT try to fix this by awaiting the library call.** node-poweredup's motor
+methods return a promise that never settles, so `await motor.brake()` deadlocks
+the script - with the car still driving, which is worse than the original bug.
+This was tried and it hung the test harness mid-run with the wheels turning.
+Await a timer, never the library.
 
 `stopEverything()` additionally sends the whole stop pair twice. A stop is the
 one command worth repeating, and this is exactly the failure it guards against:

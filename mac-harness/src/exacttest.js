@@ -34,8 +34,9 @@ poweredUP.on("discover", async (hub) => {
     await wait(600);
 
     if (awaited) {
-      // Await each write so two commands never race in the same tick.
-      for (const m of used) await m.brake();
+      // Space the writes in time so they cannot race. Do NOT await the
+      // library call itself - that promise never settles and hangs.
+      for (const m of used) { m.brake(); await wait(20); }
     } else {
       for (const m of used) m.brake();
     }
@@ -56,10 +57,10 @@ poweredUP.on("discover", async (hub) => {
   const r3 = await scenario("3. TWO motors, TWO speeds, no steer cmd", { twoMotors: true, twoSpeeds: true, steerCmd: false });
   const r4 = await scenario("4. TWO motors, TWO speeds, WITH steer cmd", { twoMotors: true, twoSpeeds: true, steerCmd: true });
 
-  const r5 = await scenario("5. TWO motors, brakes AWAITED (the fix)", { twoMotors: true, twoSpeeds: true, steerCmd: true, awaited: true });
+  const r5 = await scenario("5. TWO motors, brakes SPACED 20ms (the fix)", { twoMotors: true, twoSpeeds: true, steerCmd: true, awaited: true });
 
   console.log("\n=== RESULT ===");
-  console.log(`  awaiting each brake: ${r5 ? "STILL BROKEN" : "FIXES IT"}`);
+  console.log(`  spacing brakes 20ms apart: ${r5 ? "STILL BROKEN" : "FIXES IT"}`);
   const failed = [["1 motor/1 speed", r1], ["2 motors", r2], ["2 motors + 2 speeds", r3], ["full drive.js sequence", r4]]
     .filter(([, bad]) => bad).map(([k]) => k);
   console.log(failed.length ? `  brake() FAILED in: ${failed.join(", ")}` : "  brake() worked in all four - not reproduced here.");

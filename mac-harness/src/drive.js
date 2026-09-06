@@ -96,10 +96,14 @@ poweredUP.on("discover", async (hub) => {
     process.stdout.write(`\r\x1b[K[cmd] ${msg}\n`);
   };
 
-  // Every motor command is awaited. node-poweredup writes over BLE without
-  // waiting for a response, so two commands issued in the same tick race and
-  // one is silently dropped - measured on the real car as the first of two
-  // brake() calls having no effect at all.
+  // Two motor commands issued in the same tick race over BLE and one is
+  // silently dropped - measured on the real car as the first of two brake()
+  // calls having no effect at all. So separate them in time.
+  //
+  // Do NOT await the library calls to achieve this: node-poweredup's motor
+  // methods return a promise that never settles, so awaiting one deadlocks
+  // the script with the car still driving. Await a timer instead.
+  const gap = () => new Promise((r) => setTimeout(r, 20));
   const apply = async () => {
     const power = toPower(throttle);
     if (power !== lastPower) {
@@ -107,12 +111,14 @@ poweredUP.on("discover", async (hub) => {
         // brake() actively stops; setPower(0) leaves the motor coasting -
         // measured at 56 degrees of continued rotation on the real car.
         if (power === 0) {
-          await drives[i].brake();
+          drives[i].brake();
+          await gap();
           log(`brake() -> port ${DRIVE_PORTS[i]}`);
           verifyStopped(i);
         } else {
           const p = INVERT[i] ? -power : power;
-          await drives[i].setPower(p);
+          drives[i].setPower(p);
+          await gap();
           log(`setPower(${p}) -> port ${DRIVE_PORTS[i]}`);
         }
       }
@@ -126,7 +132,7 @@ poweredUP.on("discover", async (hub) => {
     const s = STEER_INVERT ? -steerValue : steerValue;
     const target = steerToPosition(s, halfRange);
     if (target !== lastSteerCmd) {
-      await steer.gotoAngle(target, 100);
+      steer.gotoAngle(target, 100);
       log(`gotoAngle(${target}) -> port ${STEER_PORT}`);
       lastSteerCmd = target;
     }
@@ -172,7 +178,7 @@ poweredUP.on("discover", async (hub) => {
       process.stdout.write("\r\x1b[K[cmd] waiting for stop verification to finish...\n");
       await new Promise((r) => setTimeout(r, 2400));
     }
-    for (const d of drives) await d.brake();
+    for (const d of drives) { d.brake(); await gap(); }
     await steer.gotoAngle(0, 40);
     process.stdout.write("\nStopped, wheels centred.\n");
     process.exit(0);
@@ -217,7 +223,8 @@ poweredUP.on("discover", async (hub) => {
         // drive motor directly, so a stale cache can never swallow a stop.
         throttle = 0;
         steerValue = 0;
-        for (let i = 0; i < drives.length; i++) await drives[i].brake();
+        for (let i = 0; i < drives.length; i++) drives[i].brake();
+          await gap();
         lastPower = 0;
         log("SPACE: direct brake() on all drive motors");
         log("     watch the wheels for ~3s; verification below. Do NOT quit yet.");
