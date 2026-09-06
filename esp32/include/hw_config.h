@@ -2,28 +2,28 @@
 #include <stdint.h>
 
 // ============================================================================
-// UNVERIFIED PLACEHOLDER VALUES.
+// PORT ASSIGNMENTS: MEASURED against the real car on 2026-09-05.
+// MOTOR DIRECTIONS: STILL UNVERIFIED — see below.
 //
-// These constants are transcribed from mac-harness/hardware-constants.json,
-// which itself carries "verified": false. No physical car was available when
-// this file was written. Before this firmware is trusted to drive the real
-// LEGO Technic 42160 / Technic Hub 88012:
-//   1. Run `npm run discover`, then `npm run calibrate`, then `npm run drive`
-//      in mac-harness/ against the real car.
-//   2. Confirm drive-motor agreement and steering direction.
-//   3. Re-measure steerHalfRange from two agreeing calibration runs.
-//   4. Update mac-harness/hardware-constants.json (set "verified": true) and
-//      transcribe the confirmed values into this file by hand.
-// Until that has happened, HW_STEER_PORT, HW_DRIVE_PORTS, HW_DRIVE_INVERT,
-// and HW_STEER_INVERT below are best-guess placeholders only.
+// Measured with mac-harness against a real LEGO Technic 42160 / Hub 88012:
+//   - Three TechnicLargeLinearMotors on ports A, B and D. Port C is empty.
+//   - D is the steering motor, proven by end-stop sweep. A and B spin freely
+//     and are therefore the drive pair.
+//   - Steering span measured twice: 234 and 235 degrees (agreement within 1
+//     degree), giving a halfRange of 105-106 after the 10% margin. The
+//     firmware re-measures this itself on every connect, so it is recorded in
+//     mac-harness/hardware-constants.json for reference rather than hardcoded.
+//
+// STILL UNVERIFIED: HW_DRIVE_INVERT and HW_STEER_INVERT below. Determining
+// them needs `npm run drive` against the car — press W and check both drive
+// wheels turn the SAME way, then press A and check the car steers LEFT.
+// Until that is done these two lines are guesses.
 // ============================================================================
 
-// Transcribed from mac-harness/hardware-constants.json (Task 4).
-// Port letters map to LWP3 port numbers: A=0, B=1, C=2, D=3.
-static const uint8_t HW_STEER_PORT = 0;              // "A"
-static const uint8_t HW_DRIVE_PORTS[2] = { 1, 2 };   // "B", "C"
-static const bool HW_DRIVE_INVERT[2] = { false, true };
-static const bool HW_STEER_INVERT = false;
+static const uint8_t HW_STEER_PORT = 3;              // "D" — measured
+static const uint8_t HW_DRIVE_PORTS[2] = { 0, 1 };   // "A", "B" — measured
+static const bool HW_DRIVE_INVERT[2] = { false, false };  // UNVERIFIED
+static const bool HW_STEER_INVERT = false;                // UNVERIFIED
 
 // UART to the micro:bit. GPIO16/17 are free on WROOM; see the spec if you
 // substitute a WROVER, where PSRAM claims them.

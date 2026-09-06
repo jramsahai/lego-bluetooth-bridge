@@ -1,9 +1,9 @@
 {
-  "steerPort": "A",
-  "drivePorts": ["B", "C"],
-  "driveInvert": [false, true],
+  "steerPort": "D",
+  "drivePorts": ["A", "B"],
+  "driveInvert": [false, false],
   "steerInvert": false,
-  "steerHalfRange": 63,
-  "verified": false,
-  "notes": "UNVERIFIED PLACEHOLDER VALUES. No physical car was available when this file was written; these are the brief's example values, not measurements. Before Task 7 (ESP32 hw_config.h) or any real driving, run `npm run discover`, then `npm run calibrate`, then `npm run drive` against the real 42160/Technic Hub 88012, confirm drive-motor agreement and steering direction, and replace every field here (including steerHalfRange from two agreeing calibration runs) with the measured values. Set verified to true only once that has been done."
+  "steerHalfRange": 105,
+  "verified": "ports and steerHalfRange measured 2026-09-05 against the real car; driveInvert and steerInvert NOT yet verified",
+  "notes": "Discovery found three TechnicLargeLinearMotors on A, B, D with C empty. D proven to be steering by end-stop sweep; A and B never stalled, so they are the drive pair. Steering span measured twice at 234 and 235 degrees (halfRange 105 and 106); the smaller is recorded here as the conservative value. The ESP32 re-measures halfRange itself on every connect, so this is reference only. driveInvert/steerInvert still require `npm run drive`."
 }
