@@ -119,8 +119,8 @@ Instead the first caller's listener is removed, its callback (and
 `writeAsync` promise) never fires, and the first `write` event is delivered
 to the *second* caller, whose write has not actually been acknowledged yet.
 The second event then finds no listener. The data itself is still written
-(the peripheral executed both commands in our traces); only the completion
-bookkeeping is wrong.
+(the peripheral executed both commands in the traces below); only the
+completion bookkeeping is wrong.
 
 **When it bites.** Any client that writes to one characteristic from more
 than one logical source without serialising, which is the normal shape of a
@@ -160,9 +160,9 @@ Legoino builds (`speed, maxPower, brakingStyle, profile`) is the shape of a
 StartSpeed-family command, but the sub-command byte says StartPower. The
 bytes `maxPower`, `brakingStyle`, `0x03` are therefore not part of any
 command the hub is being asked to run, and `brakingStyle` in particular has
-no effect: `stopTachoMotor` believes it is stopping with `BrakingStyle::BRAKE`
-but is sending StartPower with power byte 127 (see issue 4), which the hub
-happens to treat as brake.
+no effect: `stopTachoMotor` is called with `BrakingStyle::BRAKE`, but what
+actually reaches the hub is StartPower with power byte 127 (see issue 4),
+which the hub treats as brake.
 
 **Measured behaviour on Technic Hub 88012** (`mac-harness/src/firmwarecmds.js`,
 2026-09-06): the hub accepted the 8-byte message with no Generic Error,
@@ -209,7 +209,7 @@ defined meaning for 101..125.
 
 - `setBasicMotorSpeed(port, 100)` puts **126** on the wire, which is the hold
   sentinel for StartPower, not full power. What a hub does with it is
-  undefined (we did not measure it), and the mapping means no caller can ever
+  undefined (not measured here), and the mapping means no caller can ever
   send 100.
 - `setBasicMotorSpeed(port, 0)` sends **127**, so `stopBasicMotor` is an
   active brake rather than the float (0) the name and comment suggest. That is
@@ -219,9 +219,9 @@ defined meaning for 101..125.
   again outside the defined range.
 - A caller cannot pass the brake or hold sentinels deliberately:
   `MapSpeed(127)` is `127 * 126 / 100 = 160`, which as int8 is **-96**, nearly
-  full reverse. A user who reads the protocol and calls
-  `setBasicMotorSpeed(port, 127)` to brake drives the motor backwards. We
-  nearly shipped exactly that.
+  full reverse. A caller who reads the protocol and calls
+  `setBasicMotorSpeed(port, 127)` intending to brake instead drives the motor
+  backwards.
 
 **Suggested fix.** Clamp to -100..100 and send the value as-is; provide
 explicit `brake(port)` (127) and `hold(port)` (126) helpers; make "0" mean
