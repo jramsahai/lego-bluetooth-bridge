@@ -234,6 +234,12 @@ brief signal dropout mid-drive, can never make the car move on its own. Press
 button A once (after the status icon shows `READY_DISARMED`, not before) to
 arm it and start driving.
 
+## Beyond the micro:bit
+
+The ESP32 has no micro:bit-specific logic — it only expects the ASCII frame
+protocol (`esp32/lib/ctrl/protocol.h`) arriving over UART2. Any device that
+speaks that same frame format is a drop-in replacement or addition.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
