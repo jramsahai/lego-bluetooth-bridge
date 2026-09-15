@@ -23,6 +23,6 @@ bool parseFrame(const char *line, Frame *out);
 // Status byte, ESP32 -> micro:bit. The micro:bit's uart.init(tx=pin0,
 // rx=pin1) puts MicroPython's own console on this line, so a raw 0x03
 // (CALIBRATING) is Ctrl-C to it and raises KeyboardInterrupt inside main.py
-// (docs/OPEN-ISSUE-microbit-freeze.md). Status therefore travels as the
+// (docs/ISSUE-microbit-freeze.md). Status therefore travels as the
 // ASCII digit '0'..'7', never as the raw value.
 uint8_t statusToWire(uint8_t status);

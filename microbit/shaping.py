@@ -53,7 +53,7 @@ def decode_status(byte):
     value: after main.py's uart.init(tx=pin0, rx=pin1) this UART is also
     MicroPython's console, and a raw 0x03 (CALIBRATING) is Ctrl-C there,
     which raises KeyboardInterrupt inside main.py and silently ends it
-    (docs/OPEN-ISSUE-microbit-freeze.md). Anything outside '0'..'9' is not
+    (docs/ISSUE-microbit-freeze.md). Anything outside '0'..'9' is not
     a status; -1 keeps it out of main.py's icon table so it shows as SAD.
     """
     d = byte - 48  # ord("0")

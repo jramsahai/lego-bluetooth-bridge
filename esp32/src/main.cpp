@@ -209,7 +209,7 @@ static void stopEverything() {
     // The "port ignores every later command after two back-to-back writes"
     // fault seen from the Mac harness was traced to node-poweredup's per-port
     // command queue wedging on the Mac, not to the hub dropping writes
-    // (docs/OPEN-ISSUE-port-a.md). Legoino has no such queue: it writes each
+    // (docs/ISSUE-port-a.md). Legoino has no such queue: it writes each
     // command straight to the characteristic, so that fault cannot happen
     // here. The spacing below is kept anyway as cheap insurance against the
     // hub's two-deep output buffer, and a stop is the one command worth

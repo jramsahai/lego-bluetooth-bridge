@@ -173,7 +173,7 @@ encoders and reported. Car on a stand with the wheels off the ground.
 All motor commands are written directly to the hub by `src/rawmotor.js`,
 using the same bytes the ESP32 firmware sends, rather than through
 node-poweredup's command queue. That queue can wedge a port for a whole
-session; see `docs/OPEN-ISSUE-port-a.md`. The remaining scripts under
+session; see `docs/ISSUE-port-a.md`. The remaining scripts under
 `src/` are diagnostics from that investigation and are listed in the same
 document.
 
@@ -218,7 +218,7 @@ controllers can consume or ignore it. On the wire the
 status travels as the ASCII digit `'0'`..`'7'` (0x30..0x37), **never as the
 raw value**: the micro:bit's `uart.init(tx=pin0, rx=pin1)` puts MicroPython's
 own console on `P1`, so a raw `0x03` (`CALIBRATING`) is Ctrl-C to it and
-silently kills `main.py` — see `docs/OPEN-ISSUE-microbit-freeze.md`.
+silently kills `main.py` — see `docs/ISSUE-microbit-freeze.md`.
 
 | Status | Wire byte | ESP32 state      | micro:bit icon (`Image.*`) |
 |--------|-----------|------------------|------------------------------|

@@ -1,8 +1,10 @@
 # Issues found in third-party libraries
 
-Found while bringing up this project against a LEGO Technic Hub 88012 (set
-42160) on 2026-09-05 and 2026-09-06. Each section is written to stand alone as
-an upstream bug report. Versions are the ones installed in this repository.
+Found while bringing up [lego-bt-bridge](https://github.com/jramsahai/lego-bt-bridge) against a LEGO Technic Hub
+88012 (set 42160) on 2026-09-05 and 2026-09-06. Each section is written to
+stand alone as an upstream bug report, with absolute links back to the
+reproductions and traces in this repository so it can be pasted into an
+issue tracker as-is. Versions are the ones installed in this repository.
 
 | Library | Version | Issues |
 |---------|---------|--------|
@@ -12,7 +14,8 @@ an upstream bug report. Versions are the ones installed in this repository.
 
 Issues 1 and 2 combine into one user-visible fault, which is how they were
 found: a motor port silently stops accepting commands for the rest of the
-session. The full investigation is in `docs/OPEN-ISSUE-port-a.md`.
+session. The full investigation is in
+[`docs/ISSUE-port-a.md`](https://github.com/jramsahai/lego-bt-bridge/blob/main/docs/ISSUE-port-a.md).
 
 ---
 
@@ -57,8 +60,9 @@ sets `_bufferLength` from the feedback (0 for `0x0A`), and then the late
 guard at the top of `transmitNextPortOutputCommand` returns forever, since the
 only thing that could reconcile the two is more feedback, which needs a write.
 
-**Reproduction without hardware.** `mac-harness/test/poweredup-queue.test.js`
-in this repository drives the real `TechnicLargeLinearMotor` class from
+**Reproduction without hardware.**
+[`mac-harness/test/poweredup-queue.test.js`](https://github.com/jramsahai/lego-bt-bridge/blob/main/mac-harness/test/poweredup-queue.test.js)
+in [lego-bt-bridge](https://github.com/jramsahai/lego-bt-bridge) drives the real `TechnicLargeLinearMotor` class from
 10.1.0 with a fake hub whose `send()` promise and `finish()` calls are
 controlled. It shows: (a) dropping the first write's resolution leaves every
 later command for that port unwritten while another port keeps working;
@@ -66,7 +70,7 @@ later command for that port unwritten while another port keeps working;
 same bytes still gets through.
 
 **Observed on hardware.** With every BLE byte logged
-(`mac-harness/src/tracetest.js`): port A `setPower(30)` written; port B
+([`mac-harness/src/tracetest.js`](https://github.com/jramsahai/lego-bt-bridge/blob/main/mac-harness/src/tracetest.js)): port A `setPower(30)` written; port B
 `setPower(30)` written 40 ms later; one acknowledgement arrives 53 ms after
 A's write; A's later `setPower(70)` and `brake()` are logged by the
 application and never appear on the wire; port B's do. The motor keeps
@@ -129,7 +133,9 @@ Wireless Protocol every port shares one characteristic. A write-with-response
 round trip on macOS was measured at 49-64 ms, so two writes less than ~50 ms
 apart are enough.
 
-**Observed.** `mac-harness/src/tracetest.js` output, 2026-09-05: two writes
+**Observed.**
+[`mac-harness/src/tracetest.js`](https://github.com/jramsahai/lego-bt-bridge/blob/main/mac-harness/src/tracetest.js)
+output, 2026-09-05: two writes
 40 ms apart, one acknowledgement 53 ms after the first write (i.e. the
 first's), reported to the second write's callback 11 ms after it was issued;
 the first write's promise never resolved.
@@ -164,7 +170,8 @@ no effect: `stopTachoMotor` is called with `BrakingStyle::BRAKE`, but what
 actually reaches the hub is StartPower with power byte 127 (see issue 4),
 which the hub treats as brake.
 
-**Measured behaviour on Technic Hub 88012** (`mac-harness/src/firmwarecmds.js`,
+**Measured behaviour on Technic Hub 88012**
+([`mac-harness/src/firmwarecmds.js`](https://github.com/jramsahai/lego-bt-bridge/blob/main/mac-harness/src/firmwarecmds.js),
 2026-09-06): the hub accepted the 8-byte message with no Generic Error,
 treated the first payload byte as power (speed 30 → byte 37 drove the motor
 to its end stop; `stopTachoMotor`'s byte 127 stopped two running motors), and
@@ -244,7 +251,8 @@ renamed, `setPower` changed its parameter types, and the
 `NimBLEAddress(std::string)` / `NimBLEAdvertisementData::addData(std::string)`
 overloads were removed in NimBLE-Arduino 2.0.
 
-**Workaround used here.** Pin the 1.x line in `platformio.ini`:
+**Workaround used here.** Pin the 1.x line in
+[`esp32/platformio.ini`](https://github.com/jramsahai/lego-bt-bridge/blob/main/esp32/platformio.ini):
 
 ```ini
 lib_deps =
@@ -262,11 +270,14 @@ With that, Legoino 1.1.0 builds cleanly against NimBLE-Arduino 1.4.3.
 ## What this project did about each
 
 - Issues 1 and 2: the Mac harness bypasses node-poweredup's queue and writes
-  each Port Output Command directly (`mac-harness/src/rawmotor.js`); the
+  each Port Output Command directly
+  ([`mac-harness/src/rawmotor.js`](https://github.com/jramsahai/lego-bt-bridge/blob/main/mac-harness/src/rawmotor.js)); the
   returned promise settles on acknowledgement or a 300 ms timeout so a lost
   callback cannot hang a caller.
 - Issues 3 and 4: the ESP32 firmware no longer uses any Legoino motor helper
-  for output. `esp32/lib/ctrl/lwp3.cpp` builds StartPower, GotoAbsolutePosition
-  and PresetEncoder byte by byte and writes them with Legoino's public
-  `WriteValue`; native tests pin those bytes to the harness's test vectors.
+  for output. [`esp32/lib/ctrl/lwp3.cpp`](https://github.com/jramsahai/lego-bt-bridge/blob/main/esp32/lib/ctrl/lwp3.cpp)
+  builds StartPower, GotoAbsolutePosition and PresetEncoder byte by byte and
+  writes them with Legoino's public `WriteValue`; native tests
+  ([`esp32/test/test_lwp3`](https://github.com/jramsahai/lego-bt-bridge/blob/main/esp32/test/test_lwp3/test_lwp3.cpp)) pin
+  those bytes to the harness's test vectors.
 - Issue 5: pinned as above.

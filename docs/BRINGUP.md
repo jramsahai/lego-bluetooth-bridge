@@ -24,12 +24,12 @@ Each of these is recorded in detail elsewhere; this is the index.
   `mac-harness/test/poweredup-queue.test.js`, and fixed by writing motor
   commands directly (`mac-harness/src/rawmotor.js`). The ESP32 firmware
   (Legoino) writes without waiting for acknowledgements and has no such
-  queue, so it is not affected. See `docs/OPEN-ISSUE-port-a.md`.
+  queue, so it is not affected. See `docs/ISSUE-port-a.md`.
 - **The micro:bit froze on the connected checkmark.** The ESP32 was sending
   status as a raw byte, and a raw `0x03` (`CALIBRATING`) is Ctrl-C to the
   MicroPython console that `uart.init(tx=pin0, rx=pin1)` puts on `P1`.
   Status now travels as ASCII digits. See
-  `docs/OPEN-ISSUE-microbit-freeze.md`.
+  `docs/ISSUE-microbit-freeze.md`.
 - **`uflash` flashes exactly one script.** `main.py` imports `shaping.py`,
   so a plain `uflash main.py` boots into an `ImportError`. `flash.sh` now
   builds a single bundle first. See the flashing section below.
@@ -125,7 +125,7 @@ exactly one new interface.
    it is a real transient state that is not normally rendered. If the
    display does stop on the `CONNECTED` checkmark and never moves again,
    that is the signature of a raw `0x03` reaching the micro:bit's console
-   (see `docs/OPEN-ISSUE-microbit-freeze.md`); status must go down the wire
+   (see `docs/ISSUE-microbit-freeze.md`); status must go down the wire
    as ASCII digits (`statusToWire` on the ESP32, `decode_status` on the
    micro:bit). What you should observe on the display is the scanning icon
    (`Image.DIAMOND`), then the calibrating clock (`Image.ALL_CLOCKS[0]`)
@@ -271,7 +271,7 @@ afterwards and looks like a broken stop. With the two starting commands
 The mechanism is not in the hub. It is node-poweredup's per-port command
 queue wedging when a second write is issued before the first one's BLE
 acknowledgement returns, after which the library silently stops writing to
-that port for the rest of the session (`docs/OPEN-ISSUE-port-a.md`). The
+that port for the rest of the session (`docs/ISSUE-port-a.md`). The
 harness now bypasses that queue by writing motor commands directly
 (`mac-harness/src/rawmotor.js`) and still spaces commands 40 ms apart.
 Legoino on the ESP32 writes directly and has no such queue, so this does

@@ -39,7 +39,7 @@ poweredUP.on("discover", async (hub) => {
   // issued before the first one's BLE acknowledgement (~55 ms) returns, after
   // which the library silently never writes another command for that port -
   // the "port A ignores everything" fault. See src/rawmotor.js and
-  // docs/OPEN-ISSUE-port-a.md.
+  // docs/ISSUE-port-a.md.
   const steer = rawMotor(await hub.waitForDeviceAtPort(STEER_PORT));
   const drives = [];
   for (const p of DRIVE_PORTS) drives.push(rawMotor(await hub.waitForDeviceAtPort(p)));

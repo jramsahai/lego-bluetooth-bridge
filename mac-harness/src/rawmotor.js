@@ -9,7 +9,7 @@
 // (about 50-65 ms on the development Mac), the first write's promise never resolves, that
 // command sits at the head of its port's queue forever, and the library never
 // writes another command for that port. That is the "port A ignores its
-// commanded power for the rest of the session" fault (docs/OPEN-ISSUE-port-a.md),
+// commanded power for the rest of the session" fault (docs/ISSUE-port-a.md),
 // observed byte-for-byte with `npm run trace` and reproduced without hardware
 // in test/poweredup-queue.test.js.
 //

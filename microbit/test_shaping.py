@@ -67,7 +67,7 @@ def test_built_frames_round_trip_through_a_reference_parser(steer, throttle, fla
 
 # The ESP32 sends its status as an ASCII digit, never as a raw small
 # integer: the UART is also MicroPython's console, where a raw 0x03 is
-# Ctrl-C and kills main.py (docs/OPEN-ISSUE-microbit-freeze.md).
+# Ctrl-C and kills main.py (docs/ISSUE-microbit-freeze.md).
 def test_decode_status_reads_ascii_digits():
     assert decode_status(ord("0")) == 0
     assert decode_status(ord("3")) == 3

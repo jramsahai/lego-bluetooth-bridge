@@ -1,11 +1,11 @@
-// Answers the open question in docs/OPEN-ISSUE-port-a.md directly: when port
+// Answers the question in docs/ISSUE-port-a.md directly: when port
 // A "ignores" a command, was that command ever written to Bluetooth?
 //
 // Runs the two contexts from secondcmdtest that bracket the fault (A alone,
 // then A and B together) with every BLE byte logged, then reports each
 // application-level motor command as WRITTEN or NEVER WRITTEN.
 //
-// Observed on the car 2026-09-05 (see docs/OPEN-ISSUE-port-a.md): in the A+B
+// Observed on the car 2026-09-05 (see docs/ISSUE-port-a.md): in the A+B
 // context, A's write is issued, B's write follows 40 ms later, only ONE
 // "ack write" line appears (attributed to B, 11 ms after it - really A's), A's
 // command is reported "acked NEVER", queue[A] shows next=1 with nothing
