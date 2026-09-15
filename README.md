@@ -1,4 +1,4 @@
-# lego-bt-bridge
+# lego-bluetooth-bridge
 
 An ESP32 that acts as a Bluetooth Low Energy controller for a LEGO Technic
 Hub, so you can drive a Powered Up model from whatever input device you like
