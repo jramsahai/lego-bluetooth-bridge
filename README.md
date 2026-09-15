@@ -1,25 +1,39 @@
 # lego-bt-bridge
 
-Tilt a BBC micro:bit, drive a LEGO Technic 42160 (Audi RS Q e-tron). The
-official LEGO CONTROL+ phone app is fine at its job but unpleasant to use as a
-controller, so this replaces it with an accelerometer and two AA-scale
-microcontrollers, without touching the car itself.
+An ESP32 that acts as a Bluetooth Low Energy controller for a LEGO Technic
+Hub, so you can drive a Powered Up model from whatever input device you like
+instead of the official CONTROL+ phone app. The reference build uses a BBC
+micro:bit as a tilt controller, but the micro:bit is one application of the
+bridge, not the point of it.
 
 The system is three small components, each independently testable, connected
-by two well-defined interfaces: an ASCII serial protocol and Bluetooth Low
-Energy.
+by two well-defined interfaces: a simple ASCII serial protocol into the ESP32
+and LEGO Wireless Protocol 3.0 over BLE out of it.
 
-## The car is never modified
+- **The bridge** (`esp32/`) is the reusable part. It holds the BLE connection
+  to the hub, calibrates the steering on every connect, applies failsafes,
+  and drives the motors. It accepts steer/throttle frames over a UART and
+  has no idea what produced them.
+- **The micro:bit tilt controller** (`microbit/`) is the worked example: read
+  the accelerometer, shape tilt into steer/throttle, send frames.
+- **The Mac harness** (`mac-harness/`) is a desktop tool for talking to the
+  hub directly, used to discover ports, prove out the algorithms, and drive
+  the car from a keyboard before trusting any embedded code.
 
-Nothing here flashes the Technic Hub, patches its firmware, or pairs with it
-in any way the CONTROL+ app would notice. The hub (LEGO Technic Hub 88012)
-speaks LEGO Wireless Protocol 3.0 over BLE with no pairing and no
-authentication, and the official app is just one more BLE client sending it
-port-output commands. This project is another such client. That means:
+The car it was developed against is the LEGO Technic 42160 (Audi RS Q
+e-tron) with its Technic Hub 88012 and three large linear motors. Other
+Powered Up models with a steering motor and one or two drive motors should
+work with a different port map (`esp32/include/hw_config.h`).
 
-- Nothing to undo, ever.
-- To go back to the phone app: power-cycle the car, open CONTROL+. That's it.
-  There is no firmware to reflash and no state left behind on the hub.
+## How it talks to the hub
+
+The bridge does not modify the car. The Technic Hub speaks LEGO Wireless
+Protocol 3.0 over BLE with no pairing and no authentication, and the
+official app is one more BLE client sending it port-output commands. This
+project is another such client, built on
+[Legoino](https://github.com/corneliusmunz/legoino). Nothing is flashed to
+the hub, so switching back to CONTROL+ is a matter of power-cycling the car
+and opening the app.
 
 ## Architecture
 
@@ -40,11 +54,11 @@ port-output commands. This project is another such client. That means:
               +----------------------------------+
 ```
 
-- **`microbit/`** — MicroPython on the micro:bit. Reads the accelerometer,
-  shapes tilt into steer/throttle values, and sends one ASCII frame per
-  sample over UART. Knows nothing about LEGO or Bluetooth. Displays the
-  ESP32's status byte as an icon, since the micro:bit is the only thing here
-  with a screen.
+- **`microbit/`** — the reference input device: MicroPython on a BBC
+  micro:bit. Reads the accelerometer, shapes tilt into steer/throttle
+  values, and sends one ASCII frame per sample over UART. Knows nothing
+  about LEGO or Bluetooth. Displays the ESP32's status byte as an icon,
+  since the micro:bit is the only thing here with a screen.
 - **`esp32/`** — the BLE central. Holds the connection to the hub, runs
   steering calibration on every connect, parses frames from the micro:bit,
   applies failsafes, and drives the motors via
@@ -59,7 +73,39 @@ port-output commands. This project is another such client. That means:
   for it any time you need to debug the car independent of the rest of the
   stack.
 
-## Wiring
+## Other input devices
+
+The ESP32 only expects the ASCII frame protocol
+(`esp32/lib/ctrl/protocol.h`) on UART2: one line per sample,
+`!<steer>,<throttle>,<flags>*<XX>`, with steer and throttle in -100..100 and
+an XOR checksum. Anything that can produce that stream is a drop-in
+controller. Some options, in rough order of effort:
+
+- **A Bluetooth game controller.** The ESP32 has its own Bluetooth radio,
+  so a second ESP32 (or the same one, with some work) can pair with a
+  PlayStation, Xbox, Switch Pro or generic BLE gamepad via a library such as
+  [Bluepad32](https://github.com/ricardoquesada/bluepad32) and map the
+  sticks and triggers to steer and throttle.
+- **A phone or laptop over USB serial.** Any program that can write to a
+  serial port at 115200 baud can drive the car: a web page using the Web
+  Serial API, a Python script reading a joystick, or a keyboard loop.
+- **An RC transmitter.** A cheap hobby receiver outputs PWM or SBUS; a
+  microcontroller in between converts channels to frames.
+- **A different microcontroller with different sensors.** An Arduino with a
+  thumb joystick, a Raspberry Pi Pico reading a gesture sensor, or another
+  micro:bit with buttons instead of tilt.
+- **Autonomy.** The frame source does not have to be a human. A board
+  running a line follower or a distance-sensor loop can feed frames just as
+  well.
+
+The status byte coming back the other way (see the legend below) is
+optional to consume; the micro:bit shows it on its LEDs, but a controller
+with no display can ignore it.
+
+## Wiring (micro:bit build)
+
+The bridge side of this table applies to any 3.3 V controller: frames in on
+`GPIO16`, status out on `GPIO17`, common ground.
 
 | micro:bit | ESP32          | Purpose                    |
 |-----------|----------------|-----------------------------|
@@ -133,17 +179,15 @@ document.
 
 ### ESP32 (PlatformIO)
 
-This machine has PlatformIO installed in a project-local virtualenv at
-`./.venv/bin/pio`; if you have `pio` on your `PATH` instead, drop the
-`../.venv/bin/` prefix from the commands below.
-
 ```bash
 cd esp32
-../.venv/bin/pio run -e esp32dev -t upload   # build and flash
-../.venv/bin/pio device monitor              # watch boot/connect/calibrate logs
+pio run -e esp32dev -t upload   # build and flash
+pio device monitor              # watch boot/connect/calibrate logs
 ```
 
-(Or, with a global install: `pio run -e esp32dev -t upload && pio device monitor`.)
+If you would rather not install PlatformIO globally, a project-local
+virtualenv works: `python3 -m venv .venv && .venv/bin/pip install platformio`
+from the repo root, then use `../.venv/bin/pio` in place of `pio` above.
 
 ### micro:bit
 
@@ -153,8 +197,9 @@ python3 -m venv .venv && .venv/bin/pip install uflash pytest   # once
 ./flash.sh
 ```
 
-`flash.sh` prefers `microbit/.venv` if it exists (this Mac's system Python is
-externally managed), otherwise whatever `python3` is on your `PATH`. It runs
+`flash.sh` prefers `microbit/.venv` if it exists (useful where the system
+Python is externally managed), otherwise whatever `python3` is on your
+`PATH`. It runs
 `build_bundle.py`, which inlines `shaping.py` into `main.py` at flash time
 and flashes the result as one script — `uflash` only ever flashes a single
 file, and putting `shaping.py` on the device separately with `microfs` does
@@ -168,7 +213,8 @@ to flash (see the wiring note above).
 ## Status-icon legend
 
 The ESP32 has no display of its own, so it reports its state as a single
-byte at 5 Hz, which the micro:bit renders on its LED matrix. On the wire the
+byte at 5 Hz, which the micro:bit renders on its LED matrix. Other
+controllers can consume or ignore it. On the wire the
 status travels as the ASCII digit `'0'`..`'7'` (0x30..0x37), **never as the
 raw value**: the micro:bit's `uart.init(tx=pin0, rx=pin1)` puts MicroPython's
 own console on `P1`, so a raw `0x03` (`CALIBRATING`) is Ctrl-C to it and
@@ -204,7 +250,7 @@ cd mac-harness && npm test
 
 # ESP32: frame parsing/checksum, status wire encoding, steering/slew math,
 # the drive power band and the motor command bytes; no hardware or Arduino needed
-cd esp32 && ../.venv/bin/pio test -e native
+cd esp32 && pio test -e native
 
 # micro:bit: tilt shaping (clamp, deadzone, expo), frame building, status decoding
 cd microbit && .venv/bin/python -m pytest test_shaping.py
@@ -213,7 +259,7 @@ cd microbit && .venv/bin/python -m pytest test_shaping.py
 (Use `python3 -m pytest test_shaping.py` for the last one if you aren't using
 the `microbit/.venv` that `flash.sh` also uses.)
 
-## Controls
+## Controls (micro:bit build)
 
 - **Tilt roll** (side-to-side, read on the accelerometer's X axis) steers.
 - **Tilt pitch** (forward/back, read on the accelerometer's Y axis) throttles.
@@ -233,12 +279,6 @@ is deliberate: it means powering everything up while sitting on a table, or a
 brief signal dropout mid-drive, can never make the car move on its own. Press
 button A once (after the status icon shows `READY_DISARMED`, not before) to
 arm it and start driving.
-
-## Beyond the micro:bit
-
-The ESP32 has no micro:bit-specific logic — it only expects the ASCII frame
-protocol (`esp32/lib/ctrl/protocol.h`) arriving over UART2. Any device that
-speaks that same frame format is a drop-in replacement or addition.
 
 ## License
 
