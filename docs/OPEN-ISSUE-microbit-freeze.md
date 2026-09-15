@@ -282,8 +282,7 @@ just concatenated), so `shaping.py` remains the single source of truth under
 test (`test_shaping.py`, still passing) and no hand-maintained duplicate
 ever needs to exist. Verified: `pio run -e esp32dev` and `pio test -e
 native` both green throughout; the microbit test suite
-(`microbit/.venv/bin/python -m pytest test_shaping.py`, a new project-local
-venv since this Mac's system Python is externally-managed) also green. This
+(`python -m pytest test_shaping.py` from a project-local venv) also green. This
 fix is unrelated to the freeze and should not be reverted or blamed for it.
 
 ---
@@ -359,8 +358,7 @@ byte from the wire, and it leaves the REPL-level hazards above in place.
 
 ### Hardware confirmation (done 2026-09-06, passed)
 
-1. Flash both boards (`cd esp32 && ../.venv/bin/pio run -e esp32dev -t
-   upload`; `cd microbit && ./flash.sh`). Wire `P0`<->`GPIO16`,
+1. Flash both boards (`cd esp32 && pio run -e esp32dev -t upload`; `cd microbit && ./flash.sh`). Wire `P0`<->`GPIO16`,
    `P1`<->`GPIO17`, `GND`<->`GND` (3V optional; power was never the issue).
 2. Expected: diamond -> (checkmark for a blink, or not visible at all) ->
    clock for the sweep -> small square. Press A -> heart. The display must

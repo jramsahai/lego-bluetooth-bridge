@@ -20,7 +20,7 @@ Bluetooth.** Two layers of the Mac stack combine to do this:
    characteristic. So if a write for port B is issued before the write for
    port A has been acknowledged, A's callback is gone: A's write promise
    never resolves. (The bytes for A still went out and the hub executed them;
-   only the acknowledgement is lost.) On this Mac a write acknowledgement takes
+   only the acknowledgement is lost.) On the development Mac a write acknowledgement takes
    **49–64 ms**.
 
 2. **node-poweredup 10.x only moves a command out of its per-port queue when

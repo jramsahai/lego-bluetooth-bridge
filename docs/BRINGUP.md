@@ -1,75 +1,42 @@
-# Bring-up: what still has to happen
+# Bring-up procedure and hardware findings
 
-> **Port A issue — root cause found and confirmed on the car.** Port A
-> "ignoring" commands was node-poweredup's per-port command queue wedging on
-> the Mac: when a second write to the hub is issued before the first one's BLE
-> acknowledgement (~55 ms) returns, the BLE layer drops the first write's
-> callback, node-poweredup never moves that command out of its queue, and it
-> never writes another command for that port. The hub kept running the last
-> power it had received. Seen byte-for-byte with `npm run trace`, reproduced
-> offline in `mac-harness/test/poweredup-queue.test.js`, and fixed by writing
-> motor commands directly (`mac-harness/src/rawmotor.js`). The ESP32 firmware
-> (Legoino) writes without waiting for acknowledgements and has no such queue,
-> so it is not affected. See `docs/OPEN-ISSUE-port-a.md`.
+The full stack was run on the car on 2026-09-06: harness driving, the ESP32
+driven from hand-typed frames, the wired micro:bit and ESP32 pair, and tilt
+control on the car itself. This document is the procedure for the next time
+something changes (a rebuilt car, a moved motor, a new board) and the record
+of what was learned on hardware along the way.
 
-> **Status, 2026-09-06: the full stack has run on the car.** All four
-> bring-up stages below have been done: harness driving, ESP32 from
-> hand-typed frames, the wired micro:bit + ESP32 pair, and tilt control on
-> the car itself. Two real bugs were found and fixed on the way, both
-> recorded elsewhere: the micro:bit "freeze on the checkmark"
-> (`docs/OPEN-ISSUE-microbit-freeze.md` — the ESP32 was sending a raw
-> `0x03`, which is Ctrl-C to the micro:bit's console) and `uflash` only
-> flashing one script (`microbit/build_bundle.py`). The drive power floor
-> (`DRIVE_MIN_POWER`) was added after the first drive, because a small tilt
-> made the motors whine instead of turn.
->
-> The rest of this document is kept as the procedure for the next time
-> something changes — a rebuilt car, a moved motor, a new board — and as the
-> record of what was and was not known before the first power-up.
+Do not skip the staged order below when something changes. Each stage
+isolates one interface, which is what made the hardware bugs quick to
+pin down.
 
-Everything in this repo is built and unit-tested, and as of 2026-09-06 it has
-also been run end to end on the real car. Do not skip the staged order below
-when something changes, though: each stage isolates one interface, and that
-is what made both hardware bugs above quick to pin down.
+## Bugs found on hardware
 
-## What "finished but unproven" meant before the first power-up
+Each of these is recorded in detail elsewhere; this is the index.
 
-(Historical: every item below has since been exercised on hardware. Kept
-because it records which claims were predictions at the time.)
-
-- **`esp32/` compiles for the target (first built 2026-09-05, Legoino 1.1.0),
-  but has never run on a board.** `pio run -e esp32dev` succeeds, so every
-  Legoino call in `esp32/src/main.cpp` matches the library's real headers.
-  The `native` environment (pure C++ logic, 29 test cases) also passes. There
-  is still no ESP32 board and no observation of the firmware on hardware.
-
-  Getting that first build to pass needed one change, and it was not in
-  `main.cpp`: Legoino 1.1.0 declares `depends=NimBLE-Arduino` with no version
-  bound, so PlatformIO resolved NimBLE-Arduino 2.5.1 and Legoino itself failed
-  to compile against it (`getClientListSize`, `setScanResponse`, `setPower`
-  and the `NimBLEAddress`/`addData` string overloads all changed in NimBLE
-  2.0). `platformio.ini` now pins `h2zero/NimBLE-Arduino@^1.4.2`, the line
-  Legoino was written for. Every Legoino signature `main.cpp` uses was correct
-  as written and needed no edit.
-- **The hardware constants are measured** (`docs/hardware-map.md`). See below.
-- **`microbit/main.py` has only been syntax-checked.** It has never run on a
-  micro:bit. `microbit/shaping.py` — the pure math it depends on — is
-  genuinely well-tested (`test_shaping.py`, 14 cases, desktop pytest), but the
-  glue in `main.py` (`uart.init`, `accelerometer.get_x/get_y`,
-  `button_a.was_pressed`, `display.show`, the `microbit.Image` constants) has
-  never executed on real hardware.
-- **Nothing about BLE pairing, UART timing between two real boards, motor
-  behavior, or power draw has been observed.** All of that is inference from
-  reading LEGO Wireless Protocol / Legoino documentation and BBC micro:bit
-  documentation, not from a scope or a serial monitor attached to the real
-  thing.
-
-None of this means the code is bad — the parts that could be tested off
-hardware (frame parsing, checksum, steering-range math, stall detection,
-slew limiting, tilt shaping) are genuinely covered, in three independent
-suites, and pass. It means the parts that *couldn't* be tested off hardware
-are completely unproven, and you should treat every claim below about "what
-happens on first power-up" as a prediction, not a report.
+- **Port A stopped accepting commands from the Mac harness.** The cause was
+  node-poweredup's per-port command queue. When a second write to the hub is
+  issued before the first one's BLE acknowledgement (about 55 ms) returns,
+  the BLE layer drops the first write's callback, node-poweredup never moves
+  that command out of its queue, and it never writes another command for
+  that port. The hub keeps running the last power it received. Observed
+  byte-for-byte with `npm run trace`, reproduced offline in
+  `mac-harness/test/poweredup-queue.test.js`, and fixed by writing motor
+  commands directly (`mac-harness/src/rawmotor.js`). The ESP32 firmware
+  (Legoino) writes without waiting for acknowledgements and has no such
+  queue, so it is not affected. See `docs/OPEN-ISSUE-port-a.md`.
+- **The micro:bit froze on the connected checkmark.** The ESP32 was sending
+  status as a raw byte, and a raw `0x03` (`CALIBRATING`) is Ctrl-C to the
+  MicroPython console that `uart.init(tx=pin0, rx=pin1)` puts on `P1`.
+  Status now travels as ASCII digits. See
+  `docs/OPEN-ISSUE-microbit-freeze.md`.
+- **`uflash` flashes exactly one script.** `main.py` imports `shaping.py`,
+  so a plain `uflash main.py` boots into an `ImportError`. `flash.sh` now
+  builds a single bundle first. See the flashing section below.
+- **Small tilts made the drive motors whine instead of turn.** Geared LEGO
+  motors stall below roughly 25% power. `DRIVE_MIN_POWER` in
+  `esp32/include/hw_config.h` maps any non-zero throttle onto the 25..100
+  band.
 
 ## The hardware constants are measured
 
@@ -105,77 +72,72 @@ single file, so a plain `uflash main.py` boots into a scrolling
 `ImportError`. `microbit/flash.sh` handles this by running
 `build_bundle.py`, which inlines `shaping.py`'s source into `main.py` at
 flash time and flashes the bundle. `shaping.py` stays the single source of
-truth and stays under test; nothing hand-copied ever exists.
+truth and stays under test; nothing hand-copied is ever flashed.
 
-The other obvious fix — `microfs put shaping.py` onto the device
-filesystem as a second file — **does not work with this script**: `main.py`
+The other obvious approach, `microfs put shaping.py` onto the device
+filesystem as a second file, does not work with this script. `main.py`
 calls `uart.init(tx=pin0, rx=pin1)` a few hundred milliseconds into boot,
 which moves the micro:bit's only UART (and with it the USB REPL that
-`microfs` needs) off USB. This was tried during bring-up.
+`microfs` needs) off USB.
 
 What to expect after a correct flash, with the micro:bit on USB only (not
 yet wired to an ESP32): the target icon (`Image.TARGET`, the initial
 neutral capture) appears first, then it clears and settles on
-`Image.DIAMOND_SMALL` — the icon for status 0 — and stays there, because
-nothing is connected to `P0`/`P1` to ever change `status`. `Image.SAD` is
-only the fallback for a byte that is not a status digit, which silence
-cannot produce.
+`Image.DIAMOND_SMALL`, the icon for status 0, and stays there, because
+nothing is connected to `P0`/`P1` to change `status`. `Image.SAD` is only
+the fallback for a byte that is not a status digit, which silence cannot
+produce.
 
 ## Bring-up order
 
 Do every step here with the car on a stand, wheels off the ground, except
-the last. This mirrors the staged manual-testing plan in the design spec
-(`docs/superpowers/specs/2026-09-05-microbit-lego-controller-design.md`),
-which stages the three components so each stage isolates exactly one new
-interface.
+the last. The three components are staged so that each stage isolates
+exactly one new interface.
 
-1. **Harness drives the car** (no ESP32, no micro:bit). This is the "get real
-   hardware constants" work above: `npm run discover`, `npm run calibrate`,
+1. **Harness drives the car** (no ESP32, no micro:bit). This is the
+   hardware-constants work above: `npm run discover`, `npm run calibrate`,
    `npm run drive`. Validates BLE, port discovery, and the calibration
-   algorithm using a version of it that's had a REPL and real logs in front
-   of it. Exit criteria: you can drive the car from the Mac keyboard, and
-   `hardware-constants.json` holds real, agreeing, `verified: true` numbers.
+   algorithm using a version of it that has a REPL and real logs in front of
+   it. Exit criteria: you can drive the car from the keyboard, and
+   `hardware-constants.json` holds real, agreeing numbers.
 2. **ESP32 drives the car from hand-typed serial frames** (no micro:bit).
-   Build and flash with the corrected `hw_config.h`:
+   Build and flash with the measured `hw_config.h`:
    ```bash
    cd esp32
-   ../.venv/bin/pio run -e esp32dev -t upload
-   ../.venv/bin/pio device monitor
+   pio run -e esp32dev -t upload
+   pio device monitor
    ```
    Confirm in the monitor: `[ble] connected`, then a calibration sweep that
    sounds and looks like the one the harness just did (span within a few
    degrees of what you measured), then a settle at center. Then type frames
    by hand into the serial monitor's send line (see the checksum section
    below) and confirm the car responds: steering moves proportionally,
-   throttle ramps rather than snapping, and stopping input for ~200 ms
+   throttle ramps rather than snapping, and stopping input for about 200 ms
    triggers `FAILSAFE`. This validates the BLE half of the firmware and the
-   frame parser with zero micro:bit involvement — if something's wrong here,
-   it's in `main.cpp`/`control.cpp`/`protocol.cpp`, not in the wiring or the
-   micro:bit.
+   frame parser with no micro:bit involved. A fault here is in `main.cpp`,
+   `control.cpp` or `protocol.cpp`, not in the wiring or the micro:bit.
 3. **Full stack.** Wire the micro:bit to the ESP32 per the README's wiring
-   table, power both from the same bank, and confirm the LED status icon
-   matches what the serial monitor says the ESP32's state is. The protocol's
-   byte sequence is `BOOT` -> `BLE_SCANNING` -> `CONNECTED` -> `CALIBRATING`
-   -> `READY_DISARMED`, but `CONNECTED` is sent once and superseded roughly
-   2 ms later by `CALIBRATING`, before the micro:bit's next UART read —
-   it's a real, transient state in the protocol, just not one you should
-   expect to actually see rendered. If the display *does* stop on the
-   `CONNECTED` checkmark and never moves again, that is the signature of a
-   raw `0x03` reaching the micro:bit's console (Ctrl-C, script killed): see
-   `docs/OPEN-ISSUE-microbit-freeze.md`. Status must go down the wire as
-   ASCII digits (`statusToWire` on the ESP32, `decode_status` on the
-   micro:bit). What you should observe on the display
-   is: the scanning icon (`Image.DIAMOND`), then the calibrating clock
-   (`Image.ALL_CLOCKS[0]`) for the several seconds of the sweep, then the
-   disarmed square (`Image.SQUARE_SMALL`). Then press button A and confirm
-   the heart (`ARMED`) and the wheels responding to tilt. This
-   is the only stage that validates the micro:bit code and the physical
-   wiring together, so it's the only stage that can surface a wiring mistake
-   or a micro:bit bug — do it last, and only once stages 1 and 2 both work.
+   table, power both boards, and confirm the LED status icon matches what
+   the serial monitor says the ESP32's state is. The protocol's byte
+   sequence is `BOOT` -> `BLE_SCANNING` -> `CONNECTED` -> `CALIBRATING` ->
+   `READY_DISARMED`, but `CONNECTED` is sent once and superseded roughly
+   2 ms later by `CALIBRATING`, before the micro:bit's next UART read, so
+   it is a real transient state that is not normally rendered. If the
+   display does stop on the `CONNECTED` checkmark and never moves again,
+   that is the signature of a raw `0x03` reaching the micro:bit's console
+   (see `docs/OPEN-ISSUE-microbit-freeze.md`); status must go down the wire
+   as ASCII digits (`statusToWire` on the ESP32, `decode_status` on the
+   micro:bit). What you should observe on the display is the scanning icon
+   (`Image.DIAMOND`), then the calibrating clock (`Image.ALL_CLOCKS[0]`)
+   for the several seconds of the sweep, then the disarmed square
+   (`Image.SQUARE_SMALL`). Then press button A and confirm the heart
+   (`ARMED`) and the wheels responding to tilt. This is the only stage that
+   exercises the micro:bit code and the physical wiring together, so it is
+   the only stage that can surface a wiring mistake or a micro:bit bug. Do
+   it last, and only once stages 1 and 2 both work.
 4. **Wheels down, on the ground, only after stage 3 is clean** on the stand.
-   Start with the car pointed at open space, not toward furniture, feet, or a
-   drop — this is the first moment any of this software has ever actually
-   propelled the car under its own power.
+   Start with the car pointed at open space, away from furniture, feet, or
+   a drop.
 
 ## Hand-computing a frame checksum
 
@@ -201,153 +163,128 @@ which both assert this exact value):
 | Frame body    | Checksum | Full frame        | Meaning                                    |
 |---------------|----------|--------------------|---------------------------------------------|
 | `-42,80,1`    | `12`     | `!-42,80,1*12`     | steer left 42, throttle forward 80, armed  |
-| `0,0,1`       | `31`     | `!0,0,1*31`        | centered, zero throttle, armed — a good first frame to send: it should hold the wheels straight and the drive motors stopped, and (if calibration is done) refresh the failsafe timer without moving anything |
+| `0,0,1`       | `31`     | `!0,0,1*31`        | centered, zero throttle, armed. A good first frame to send: it should hold the wheels straight and the drive motors stopped, and (if calibration is done) refresh the failsafe timer without moving anything |
 | `0,0,0`       | `30`     | `!0,0,0*30`        | centered, zero throttle, **not armed**     |
 | `30,-50,3`    | `18`     | `!30,-50,3*18`     | steer right 30, reverse 50, armed + recal flag set |
 
 A malformed or wrong-checksum frame is dropped silently by the parser and,
-deliberately, does **not** refresh the failsafe timer — so if you mistype a
-checksum while testing, expect the car to drift toward `FAILSAFE` rather than
-do something unexpected.
+deliberately, does **not** refresh the failsafe timer. A mistyped checksum
+while testing therefore drifts the car toward `FAILSAFE` rather than doing
+anything unexpected.
 
 ## What to watch for on first power-up
 
 - **A brownout looks like the micro:bit rebooting.** If the boot icon
   (`Image.DIAMOND_SMALL`) reappears on the micro:bit's display at the exact
-  moment the drive motors start drawing current, that's the ESP32's 3.3 V
-  regulator sagging under the combined load of the motors' BLE-side draw and
-  the micro:bit riding on the same rail, not a software bug. The design spec
-  flags this as a known risk (an ESP32 onboard regulator rated for a few
-  hundred mA feeding a micro:bit that draws tens of mA is probably fine but
-  was never measured). If you see it: power the micro:bit from its own
-  separate battery/USB source instead, and keep only `P0`, `P1`, and `GND`
-  shared between the two boards (no `3V`). Don't try to fix it by only
-  reducing motor power — measure or swap the supply first.
+  moment the drive motors start drawing current, the ESP32's 3.3 V regulator
+  is sagging under the combined load of the radio and a micro:bit riding on
+  the same rail. This only applies to the single-supply wiring (`3V` to
+  `3V3`); the verified setup powers each board from its own USB port. If you
+  see it, power the micro:bit from its own supply and keep only `P0`, `P1`
+  and `GND` shared between the two boards. Reducing motor power does not
+  address the cause.
 - **The steering-calibration ERROR latch.** After 3 consecutive failed
-  calibration attempts (each attempt times out after ~3 seconds per sweep
-  direction if the motor never stalls), the firmware sets a permanent
+  calibration attempts (each attempt times out after about 3 seconds per
+  sweep direction if the motor never stalls), the firmware sets a permanent
   `g_calibLatchedError` flag, stops touching the steering motor, and reports
   status `ERROR` (icon: skull) until the next reconnect. This is
   `MAX_CALIB_ATTEMPTS` in `esp32/src/main.cpp`. The usual cause is a wrong
-  `HW_STEER_PORT` — the firmware is sweeping a drive motor or an empty port
-  and it simply never stalls the way a real steering motor against its end
-  stops does. Reconnecting the hub (power-cycle the car, or otherwise force
-  a BLE disconnect/reconnect) resets the attempt counter and gives the
-  firmware a fresh set of 3 tries — it does not require reflashing. If you
-  hit `ERROR` on the very first real run, stop and re-check
-  `HW_STEER_PORT` against `docs/hardware-map.md` before retrying; burning
-  through all 3 attempts on the same wrong port teaches you nothing new after
-  the first.
+  `HW_STEER_PORT`: the firmware is sweeping a drive motor or an empty port,
+  which never stalls the way a steering motor against its end stops does.
+  Reconnecting the hub (power-cycle the car, or otherwise force a BLE
+  disconnect and reconnect) resets the attempt counter without reflashing.
+  If `ERROR` appears on the first real run, re-check `HW_STEER_PORT`
+  against `docs/hardware-map.md` before retrying.
 
+## Hardware finding: both stop commands stop the motor
 
-## Hardware finding: both stop commands work (an earlier claim here was wrong)
-
-An earlier version of this document stated that `setPower(0)` only coasts while
-`brake()` stops the motor. **That was wrong**, and it was wrong because of a bad
-measurement, so it is worth recording how.
-
-The first test called `setPower(0)`, measured 56 degrees of rotation, then called
-`brake()` and measured 0 - and concluded brake was the one that worked. But the
-measurement began the instant each command was sent, so it counted the motor's
-deceleration as "still turning", and by the time `brake()` was called the motor
-had already spent 1.5 seconds coasting to a near stop. The test credited brake
-with a stop that had already happened.
-
-Re-measured with a 900 ms settling delay before judging:
+Measured on the car with a 900 ms settling delay before reading the
+encoder:
 
 ```
-  setPower(0)    running= 585  during-stop=  69  AFTER=   0  <-- fully stopped
-  brake()        running= 595  during-stop=  33  AFTER=   0  <-- fully stopped
+  setPower(0)    running= 585  during-stop=  69  AFTER=   0
+  brake()        running= 595  during-stop=  33  AFTER=   0
 ```
 
-**Both commands fully stop the motor.** `brake()` is somewhat more abrupt (33
-degrees of stopping transient against 69), which is a reason to prefer it, but
-either one stops the car.
+Both `setPower(0)` and `brake()` bring the motor to a full stop. `brake()`
+is more abrupt (33 degrees of stopping transient against 69), which is a
+reason to prefer it, but either one stops the car.
 
-The lesson worth keeping: when timing a physical process, let it settle before
-judging it, or you measure the transient instead of the outcome.
+An earlier measurement concluded that `setPower(0)` only coasts. That
+measurement started counting the instant each command was sent, so it
+recorded the motor's deceleration as continued rotation, and by the time
+`brake()` was called the motor had already spent 1.5 seconds coasting to a
+near stop. When timing a physical process, let it settle before judging it.
 
 ### What this means for the firmware
 
-The firmware's stop is `brakeMotor()` in `esp32/src/main.cpp`: StartPower with
-value 127, the same bytes `brake()` sends from the Mac harness and the one
-stop that has been measured on the car. It does **not** use Legoino's
+The firmware's stop is `brakeMotor()` in `esp32/src/main.cpp`: StartPower
+with value 127, the same bytes `brake()` sends from the Mac harness and the
+stop that has been measured on the car. It does not use Legoino's
 `stopTachoMotor`. That function sends sub-command `0x01` followed by
 max-power, brake-style and profile bytes; in LWP3, `0x01` is a one-byte
-StartPower, so those trailing bytes are not part of any command and the hub's
-response to them is not defined by the spec. `npm run firmwarecmds` in the
-harness sends those exact bytes, and on 2026-09-06 the hub tolerated them:
-Legoino's sweep bytes (speed byte 37) drove the steering to the same end stop
-the validated sweep finds, and Legoino's stop bytes (speed byte 127) brought
-both drive motors from ~230 degrees per half second to zero, with no Generic
-Error from the hub. So this hub reads the first payload byte of the `0x01`
-form as StartPower and ignores the rest. The firmware still does not rely on
-that: it sends the spec-defined bytes, pinned by test to the harness's. The
-calibration sweep likewise uses raw StartPower at 30, as the harness sweep
-does, instead of `setTachoMotorSpeed`.
+StartPower, so those trailing bytes are not part of any command and the
+hub's response to them is not defined by the spec. `npm run firmwarecmds`
+in the harness sends those exact bytes, and on 2026-09-06 the hub tolerated
+them: Legoino's sweep bytes (speed byte 37) drove the steering to the same
+end stop the validated sweep finds, and Legoino's stop bytes (speed byte
+127) brought both drive motors from about 230 degrees per half second to
+zero, with no Generic Error from the hub. So this hub reads the first
+payload byte of the `0x01` form as StartPower and ignores the rest. The
+firmware still does not rely on that: it sends the spec-defined bytes,
+pinned by test to the harness's. The calibration sweep likewise uses raw
+StartPower at 30, as the harness sweep does, instead of
+`setTachoMotorSpeed`.
 
 Every motor command the firmware sends is built by `esp32/lib/ctrl/lwp3.cpp`
 and written with Legoino's raw `WriteValue`, not through Legoino's motor
-helpers. Those helpers rescale power and speed through `MapSpeed` (0 becomes
-127, 1..100 becomes 1..126, -1..-100 becomes 255..128), so `setBasicMotorSpeed(port, 100)`
-puts 126 on the wire, a value LWP3 does not define for StartPower and the car
-has never been shown to obey. `test/test_lwp3` pins the firmware's bytes to the
-same vectors as `mac-harness/test/rawmotor.test.js`, so what the firmware sends
-is exactly what the harness has measured on the car.
+helpers. Those helpers rescale power and speed through `MapSpeed` (0
+becomes 127, 1..100 becomes 1..126, -1..-100 becomes 255..128), so
+`setBasicMotorSpeed(port, 100)` puts 126 on the wire, a value LWP3 does not
+define for StartPower and the car has not been shown to obey.
+`test/test_lwp3` pins the firmware's bytes to the same vectors as
+`mac-harness/test/rawmotor.test.js`, so what the firmware sends is exactly
+what the harness has measured on the car.
 
+## Hardware finding: back-to-back motor commands from the harness
 
-## Hardware finding: "consecutive motor commands race" was a Mac library bug
-
-> **Superseded.** The explanation in this section - that the hub drops one of
-> two back-to-back writes - was wrong. The measurements below are real, but the
-> mechanism is node-poweredup's per-port command queue wedging, after which the
-> library silently stops writing to that port for the rest of the session. See
-> `docs/OPEN-ISSUE-port-a.md`. The harness now bypasses that queue
-> (`mac-harness/src/rawmotor.js`). Legoino on the ESP32 writes directly and has
-> no such queue, so this does not apply to the firmware; its `delay(30)` spacing
-> is kept as cheap insurance, not as a fix. The original text follows for the
-> record.
-
-Braking two motors in a tight loop did not work. Bisected on the real car:
+Braking two motors in a tight loop from the Mac harness did not stop the
+first one. Bisected on the car (encoder degrees after the stop, first and
+second motor):
 
 ```
   1. one motor,  one speed,  no steer cmd         0  stopped
-  2. TWO motors, one speed,  no steer cmd       536    0  <<<< STILL TURNING
-  3. TWO motors, TWO speeds, no steer cmd       514    0  <<<< STILL TURNING
-  4. TWO motors, TWO speeds, WITH steer cmd     532    0  <<<< STILL TURNING
+  2. TWO motors, one speed,  no steer cmd       536    0  first still turning
+  3. TWO motors, TWO speeds, no steer cmd       514    0  first still turning
+  4. TWO motors, TWO speeds, WITH steer cmd     532    0  first still turning
 ```
 
-One motor brakes reliably. With two, the FIRST motor keeps running at full
-speed and only the SECOND actually stops. Adding speed changes or steering
-commands changes nothing - two consecutive commands is the entire trigger.
+One motor brakes reliably. With two, the first motor keeps running and only
+the second stops. Adding speed changes or steering commands changes
+nothing; two consecutive commands is the entire trigger. Spacing only the
+stop commands does not help either: two `setPower` calls fired in the same
+tick leave that port ignoring every later command, so the stop fails long
+afterwards and looks like a broken stop. With the two starting commands
+60 ms apart, every stop method worked, including a plain `setPower(0)`.
+20 ms was measured as not enough.
 
-Both node-poweredup and Legoino write to the hub over BLE **without waiting for
-a response**, so two commands issued in immediate succession race and one is
-silently lost. Nothing reports an error; the command simply never takes effect.
+The mechanism is not in the hub. It is node-poweredup's per-port command
+queue wedging when a second write is issued before the first one's BLE
+acknowledgement returns, after which the library silently stops writing to
+that port for the rest of the session (`docs/OPEN-ISSUE-port-a.md`). The
+harness now bypasses that queue by writing motor commands directly
+(`mac-harness/src/rawmotor.js`) and still spaces commands 40 ms apart.
+Legoino on the ESP32 writes directly and has no such queue, so this does
+not apply to the firmware; its `delay(30)` spacing is kept as insurance,
+not as a fix.
 
-### The rule
+Two further notes from that investigation:
 
-**Never issue two motor commands back to back - including the ones that START
-the motors.** This is the part that took longest to find: spacing only the stop
-commands does NOT help. Two `setPower` calls fired in the same tick leave that
-port ignoring every later command, so the stop fails long afterwards and looks
-like a broken stop.
-
-Bisected on the real car: with the two starting commands 60 ms apart, every stop
-method worked - brake first, brake in reverse order, even a plain `setPower(0)`.
-With them unspaced, nothing would stop the first motor.
-
-Use 40 ms in the harness and `delay(30)` in the firmware. 20 ms was measured as
-not enough.
-
-**Do NOT try to fix this by awaiting the library call.** node-poweredup's motor
-methods return a promise that only settles on hub feedback, so on a wedged port
-`await motor.brake()` never returns - with the car still driving, which is worse
-than the original bug. This was tried and it hung the test harness mid-run with
-the wheels turning. (The promises from `rawMotor` settle on the BLE write
-acknowledgement and are safe to await.)
-
-`stopEverything()` additionally sends the whole stop pair twice. A stop is the
-one command worth repeating, and this is exactly the failure it guards against:
-without it, a failsafe would have stopped one axle and left the car driving on
-the other.
+- **Do not await node-poweredup's motor methods as a fix.** They return a
+  promise that only settles on hub feedback, so on a wedged port
+  `await motor.brake()` never returns, with the car still driving. The
+  promises from `rawMotor` settle on the BLE write acknowledgement and are
+  safe to await.
+- **`stopEverything()` sends the whole stop pair twice.** A stop is the one
+  command worth repeating. Without it, a failsafe on a wedged port would
+  stop one axle and leave the car driving on the other.

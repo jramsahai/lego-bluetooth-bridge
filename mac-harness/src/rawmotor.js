@@ -6,7 +6,7 @@
 // registers each write's completion callback with onceExclusive(), which
 // REMOVES the previous pending callback. So when a second write to the hub -
 // to any port - is issued before the first write's acknowledgement comes back
-// (about 50-65 ms on this Mac), the first write's promise never resolves, that
+// (about 50-65 ms on the development Mac), the first write's promise never resolves, that
 // command sits at the head of its port's queue forever, and the library never
 // writes another command for that port. That is the "port A ignores its
 // commanded power for the rest of the session" fault (docs/OPEN-ISSUE-port-a.md),
